@@ -1,6 +1,6 @@
 # Build output
 build/
-brew-sync
+/brew-sync
 
 # Go
 *.exe
