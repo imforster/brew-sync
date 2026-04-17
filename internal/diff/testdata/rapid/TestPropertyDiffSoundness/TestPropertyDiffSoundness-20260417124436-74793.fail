@@ -1,0 +1,31 @@
+# 2026/04/17 12:44:36.239162 [TestPropertyDiffSoundness] [rapid] draw manifest: &manifest.Manifest{Version:1, Metadata:manifest.ManifestMetadata{UpdatedAt:"2025-01-01T00:00:00Z", UpdatedBy:"test", Machine:"test-machine"}, Formulae:[]manifest.PackageEntry(nil), Casks:[]manifest.PackageEntry{manifest.PackageEntry{Name:"a", Version:"", OnlyOn:[]string(nil), ExceptOn:[]string(nil)}}, Taps:[]string(nil)}
+# 2026/04/17 12:44:36.239189 [TestPropertyDiffSoundness] [rapid] draw localState: &diff.LocalState{Formulae:[]diff.Package{diff.Package{Name:"a", Version:""}}, Casks:[]diff.Package{}, Taps:[]string(nil)}
+# 2026/04/17 12:44:36.239191 [TestPropertyDiffSoundness] ToInstall contains "a" which IS in local (should not be ToInstall)
+# 
+v0.4.8#7909398262360765004
+0x0
+0x0
+0x0
+0x0
+0x0
+0x1
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x1
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0

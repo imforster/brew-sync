@@ -1,0 +1,121 @@
+# =============================================================================
+# brew-sync configuration
+# =============================================================================
+#
+# Copy this file to ~/.config/brew-sync/config.toml and edit to match your setup:
+#
+#   mkdir -p ~/.config/brew-sync
+#   cp config.toml.example ~/.config/brew-sync/config.toml
+#
+# =============================================================================
+
+# Path to the manifest file that tracks your packages.
+# Default: "brew-sync.toml" in the current directory.
+manifest_path = "brew-sync.toml"
+
+# A unique identifier for this machine. Used with only_on / except_on filters
+# in the manifest to control which packages install on which machines.
+# Examples: "work-macbook", "home-desktop", "ci-server"
+machine_tag = ""
+
+# =============================================================================
+# Sync Backend
+# =============================================================================
+#
+# Choose how the manifest is shared between machines.
+# Options: "git" or "file"
+#
+# - "git"  — stores the manifest in a Git repository (recommended)
+# - "file" — copies the manifest to/from a shared filesystem path
+#
+sync_backend = "git"
+
+# =============================================================================
+# Git Backend Setup
+# =============================================================================
+#
+# The git backend stores your manifest in a Git repository so all your
+# machines can push and pull from it. This gives you version history and
+# works well with GitHub, GitLab, or any Git remote.
+#
+# --- Quick setup with GitHub ---
+#
+# 1. Create a new private repository on GitHub:
+#    https://github.com/new
+#    Name it something like "brew-sync-manifest" and make it private.
+#
+# 2. Make sure you have SSH access to GitHub configured:
+#
+#    # Check if you already have an SSH key
+#    ls ~/.ssh/id_ed25519.pub
+#
+#    # If not, generate one
+#    ssh-keygen -t ed25519 -C "your-email@example.com"
+#
+#    # Add the public key to GitHub → Settings → SSH and GPG keys
+#    cat ~/.ssh/id_ed25519.pub
+#
+#    # Test the connection
+#    ssh -T git@github.com
+#
+# 3. Set repo_url below to your repository's SSH URL:
+#
+#    repo_url = "git@github.com:YOUR_USERNAME/brew-sync-manifest.git"
+#
+# 4. Initialize and push your first manifest:
+#
+#    brew-sync init    # capture current packages
+#    brew-sync push    # push manifest to GitHub
+#
+# 5. On another machine, pull and apply:
+#
+#    brew-sync pull
+#    brew-sync status
+#    brew-sync apply
+#
+# --- Using HTTPS instead of SSH ---
+#
+# If you prefer HTTPS (uses a personal access token):
+#
+#    repo_url = "https://github.com/YOUR_USERNAME/brew-sync-manifest.git"
+#
+# Git will prompt for credentials or use your credential helper.
+# To cache credentials:
+#
+#    git config --global credential.helper osxkeychain
+#
+# =============================================================================
+
+[git]
+# SSH (recommended):
+# repo_url = "git@github.com:YOUR_USERNAME/brew-sync-manifest.git"
+#
+# HTTPS (alternative):
+# repo_url = "https://github.com/YOUR_USERNAME/brew-sync-manifest.git"
+repo_url = ""
+
+# Branch to push/pull the manifest from.
+branch = "main"
+
+# =============================================================================
+# File Backend Setup
+# =============================================================================
+#
+# The file backend copies the manifest to/from a shared filesystem path.
+# Good for local networks, NAS drives, or cloud-synced folders.
+#
+# Examples:
+#
+#   iCloud Drive:
+#   remote_path = "/Users/YOU/Library/Mobile Documents/com~apple~CloudDocs/brew-sync.toml"
+#
+#   Dropbox:
+#   remote_path = "/Users/YOU/Dropbox/brew-sync.toml"
+#
+#   Network share:
+#   remote_path = "/Volumes/shared/brew-sync.toml"
+#
+# =============================================================================
+
+[file]
+remote_path = ""
