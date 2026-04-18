@@ -72,15 +72,14 @@ func (r *RealBrewRunner) ListTaps() ([]string, error) {
 	return parseLines(string(output)), nil
 }
 
-// Install runs `brew install <name>` or `brew install <name@version>` if a version is specified.
+// Install runs `brew install <name>`. The version field is informational only —
+// Homebrew does not support installing arbitrary versions via name@version syntax.
+// Only formulae published with @ in their name (e.g. python@3.13) use that format,
+// and those already have @ as part of pkg.Name.
 func (r *RealBrewRunner) Install(pkg diff.Package) error {
-	name := pkg.Name
-	if pkg.Version != "" {
-		name = pkg.Name + "@" + pkg.Version
-	}
-	cmd := exec.Command("brew", "install", name)
+	cmd := exec.Command("brew", "install", pkg.Name)
 	if output, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("failed to install %s: %s: %w", name, string(output), err)
+		return fmt.Errorf("failed to install %s: %s: %w", pkg.Name, string(output), err)
 	}
 	return nil
 }
