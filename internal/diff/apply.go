@@ -49,8 +49,10 @@ func (r *ApplyReport) HasErrors() bool {
 
 // ApplyOptions controls the behavior of ApplyDiff.
 type ApplyOptions struct {
-	DryRun     bool
-	SkipRemove bool
+	DryRun      bool
+	SkipRemove  bool
+	SkipInstall bool
+	OnProgress  func(operation, pkgName string)
 }
 
 // ApplyDiff executes the diff against the local Homebrew installation.
@@ -68,13 +70,21 @@ func ApplyDiff(diff *DiffResult, runner Runner, dryRun bool, opts ...ApplyOption
 	report := &ApplyReport{}
 
 	skipRemove := false
+	skipInstall := false
+	var onProgress func(string, string)
 	if len(opts) > 0 {
 		skipRemove = opts[0].SkipRemove
+		skipInstall = opts[0].SkipInstall
+		onProgress = opts[0].OnProgress
 	}
 
 	if dryRun {
 		report.Planned = true
-		report.InstallCount = len(diff.ToInstall)
+		if skipInstall {
+			report.InstallCount = 0
+		} else {
+			report.InstallCount = len(diff.ToInstall)
+		}
 		if skipRemove {
 			report.RemoveCount = 0
 			report.SkippedRemoveCount = len(diff.ToRemove)
@@ -86,13 +96,21 @@ func ApplyDiff(diff *DiffResult, runner Runner, dryRun bool, opts ...ApplyOption
 	}
 
 	// Install missing packages
-	for _, pkg := range diff.ToInstall {
-		err := runner.Install(Package{Name: pkg.Name, Version: pkg.Version})
-		report.RecordResult("install", pkg.Name, err)
+	if !skipInstall {
+		for _, pkg := range diff.ToInstall {
+			if onProgress != nil {
+				onProgress("installing", pkg.Name)
+			}
+			err := runner.Install(Package{Name: pkg.Name, Version: pkg.Version})
+			report.RecordResult("install", pkg.Name, err)
+		}
 	}
 
 	// Upgrade outdated packages
 	for _, pkg := range diff.ToUpgrade {
+		if onProgress != nil {
+			onProgress("upgrading", pkg.Name)
+		}
 		err := runner.Upgrade(Package{Name: pkg.Name, Version: pkg.Version})
 		report.RecordResult("upgrade", pkg.Name, err)
 	}
@@ -102,6 +120,9 @@ func ApplyDiff(diff *DiffResult, runner Runner, dryRun bool, opts ...ApplyOption
 		report.SkippedRemoveCount = len(diff.ToRemove)
 	} else {
 		for _, pkg := range diff.ToRemove {
+			if onProgress != nil {
+				onProgress("removing", pkg.Name)
+			}
 			err := runner.Uninstall(Package{Name: pkg.Name})
 			report.RecordResult("remove", pkg.Name, err)
 		}

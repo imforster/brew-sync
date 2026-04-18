@@ -102,6 +102,70 @@ func (mm *ManifestManager) BuildFromLocal(formulae []LocalPackage, casks []Local
 	}
 }
 
+// MergeLocal unions local packages into an existing manifest.
+// It adds packages not already present and updates versions of existing packages
+// to match local state. Packages in the manifest but not installed locally are preserved.
+// Returns counts of added and version-updated packages.
+func (mm *ManifestManager) MergeLocal(m *Manifest, localFormulae, localCasks []LocalPackage, taps []string) (added, updated int) {
+	// Index existing manifest entries
+	formulaeIdx := make(map[string]int, len(m.Formulae))
+	for i, e := range m.Formulae {
+		formulaeIdx[e.Name] = i
+	}
+	casksIdx := make(map[string]int, len(m.Casks))
+	for i, e := range m.Casks {
+		casksIdx[e.Name] = i
+	}
+
+	// Merge formulae
+	for _, pkg := range localFormulae {
+		if i, exists := formulaeIdx[pkg.Name]; exists {
+			if pkg.Version != "" && m.Formulae[i].Version != pkg.Version {
+				m.Formulae[i].Version = pkg.Version
+				updated++
+			}
+		} else {
+			m.Formulae = append(m.Formulae, PackageEntry{Name: pkg.Name, Version: pkg.Version})
+			added++
+		}
+	}
+
+	// Merge casks
+	for _, pkg := range localCasks {
+		if i, exists := casksIdx[pkg.Name]; exists {
+			if pkg.Version != "" && m.Casks[i].Version != pkg.Version {
+				m.Casks[i].Version = pkg.Version
+				updated++
+			}
+		} else {
+			m.Casks = append(m.Casks, PackageEntry{Name: pkg.Name, Version: pkg.Version})
+			added++
+		}
+	}
+
+	// Merge taps
+	tapSet := make(map[string]bool, len(m.Taps))
+	for _, t := range m.Taps {
+		tapSet[t] = true
+	}
+	for _, t := range taps {
+		if !tapSet[t] {
+			m.Taps = append(m.Taps, t)
+			added++
+		}
+	}
+
+	// Sort everything
+	sort.Slice(m.Formulae, func(i, j int) bool { return m.Formulae[i].Name < m.Formulae[j].Name })
+	sort.Slice(m.Casks, func(i, j int) bool { return m.Casks[i].Name < m.Casks[j].Name })
+	sort.Strings(m.Taps)
+
+	// Update metadata
+	m.Metadata.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+
+	return added, updated
+}
+
 // Validate checks a manifest for structural correctness.
 // It collects all validation errors and returns them together using errors.Join
 // so the user can fix them in one pass.

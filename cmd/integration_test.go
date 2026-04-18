@@ -578,6 +578,169 @@ func TestIntegration_MachineTagFiltering(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// Integration Test: Merge unions local state into existing manifest
+// Validates: merge adds local-only packages and updates versions
+// ---------------------------------------------------------------------------
+
+func TestIntegration_MergeLocal(t *testing.T) {
+	manager := manifest.NewManifestManager()
+
+	// Simulate a manifest from another machine
+	m := &manifest.Manifest{
+		Version: 1,
+		Formulae: []manifest.PackageEntry{
+			{Name: "git", Version: "2.40"},
+			{Name: "docker", Version: "24.0"},
+		},
+		Casks: []manifest.PackageEntry{
+			{Name: "firefox", Version: "120.0"},
+		},
+		Taps: []string{"homebrew/core"},
+	}
+
+	// Local state: git (newer), go (local-only), wget (local-only cask missing from manifest)
+	localFormulae := []manifest.LocalPackage{
+		{Name: "git", Version: "2.45"},
+		{Name: "go", Version: "1.23"},
+	}
+	localCasks := []manifest.LocalPackage{
+		{Name: "firefox", Version: "120.0"},
+		{Name: "slack", Version: "4.0"},
+	}
+	localTaps := []string{"homebrew/core", "hashicorp/tap"}
+
+	added, updated := manager.MergeLocal(m, localFormulae, localCasks, localTaps)
+
+	// Verify counts
+	if added != 3 { // go + slack + hashicorp/tap
+		t.Errorf("MergeLocal: expected 3 added, got %d", added)
+	}
+	if updated != 1 { // git 2.40 → 2.45
+		t.Errorf("MergeLocal: expected 1 updated, got %d", updated)
+	}
+
+	// Verify manifest contents
+	if len(m.Formulae) != 3 { // git, docker, go
+		t.Errorf("expected 3 formulae, got %d", len(m.Formulae))
+	}
+	if len(m.Casks) != 2 { // firefox, slack
+		t.Errorf("expected 2 casks, got %d", len(m.Casks))
+	}
+	if len(m.Taps) != 2 { // homebrew/core, hashicorp/tap
+		t.Errorf("expected 2 taps, got %d", len(m.Taps))
+	}
+
+	// Verify git version was updated
+	for _, f := range m.Formulae {
+		if f.Name == "git" && f.Version != "2.45" {
+			t.Errorf("expected git version 2.45, got %s", f.Version)
+		}
+	}
+
+	// Verify docker preserved (not installed locally)
+	found := false
+	for _, f := range m.Formulae {
+		if f.Name == "docker" && f.Version == "24.0" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("docker should be preserved in manifest with original version")
+	}
+
+	// Save and reload to verify round-trip
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "brew-sync.toml")
+	if err := manager.Save(path, m); err != nil {
+		t.Fatalf("Save failed: %v", err)
+	}
+	reloaded, err := manager.Load(path)
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	if len(reloaded.Formulae) != 3 {
+		t.Errorf("round-trip: expected 3 formulae, got %d", len(reloaded.Formulae))
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Integration Test: Apply with --no-install skips installs, runs upgrades
+// Validates: SkipInstall option in ApplyDiff
+// ---------------------------------------------------------------------------
+
+func TestIntegration_ApplyNoInstall(t *testing.T) {
+	m := &manifest.Manifest{
+		Version: 1,
+		Formulae: []manifest.PackageEntry{
+			{Name: "git", Version: "2.45"},
+			{Name: "ripgrep", Version: "14.0"},
+		},
+		Casks: []manifest.PackageEntry{
+			{Name: "firefox", Version: "130.0"},
+		},
+	}
+
+	// Local: git is older, ripgrep missing, firefox missing
+	mock := brew.NewMockBrewRunner()
+	mock.Formulae = []diff.Package{
+		{Name: "git", Version: "2.40"},
+	}
+	mock.Casks = []diff.Package{}
+
+	formulae, _ := mock.ListFormulae()
+	casks, _ := mock.ListCasks()
+	localState := &diff.LocalState{Formulae: formulae, Casks: casks}
+
+	result := diff.ComputeDiff(m, localState, "")
+
+	// Verify diff: 2 to install, 1 to upgrade
+	if len(result.ToInstall) != 2 {
+		t.Fatalf("expected 2 to install, got %d", len(result.ToInstall))
+	}
+	if len(result.ToUpgrade) != 1 {
+		t.Fatalf("expected 1 to upgrade, got %d", len(result.ToUpgrade))
+	}
+
+	// Apply with SkipInstall
+	report, err := diff.ApplyDiff(result, mock, false, diff.ApplyOptions{SkipInstall: true, SkipRemove: true})
+	if err != nil {
+		t.Fatalf("ApplyDiff returned error: %v", err)
+	}
+
+	// Only upgrade should have run
+	if mock.InstallCalls != 0 {
+		t.Errorf("expected 0 install calls with SkipInstall, got %d", mock.InstallCalls)
+	}
+	if mock.UpgradeCalls != 1 {
+		t.Errorf("expected 1 upgrade call, got %d", mock.UpgradeCalls)
+	}
+	if report.ErrorCount != 0 {
+		t.Errorf("expected 0 errors, got %d", report.ErrorCount)
+	}
+
+	// Verify the upgrade was for git
+	upgradeCalls := []string{}
+	for _, call := range mock.Calls {
+		if call.Operation == "upgrade" {
+			upgradeCalls = append(upgradeCalls, call.Package)
+		}
+	}
+	if len(upgradeCalls) != 1 || upgradeCalls[0] != "git" {
+		t.Errorf("expected single upgrade call for 'git', got %v", upgradeCalls)
+	}
+
+	// Dry-run with SkipInstall should report 0 installs
+	mock2 := brew.NewMockBrewRunner()
+	dryReport, _ := diff.ApplyDiff(result, mock2, true, diff.ApplyOptions{SkipInstall: true})
+	if dryReport.InstallCount != 0 {
+		t.Errorf("dry-run with SkipInstall: expected InstallCount=0, got %d", dryReport.InstallCount)
+	}
+	if dryReport.UpgradeCount != 1 {
+		t.Errorf("dry-run with SkipInstall: expected UpgradeCount=1, got %d", dryReport.UpgradeCount)
+	}
+}
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 

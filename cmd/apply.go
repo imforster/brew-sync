@@ -12,7 +12,8 @@ import (
 )
 
 var (
-	removeFlag bool
+	removeFlag    bool
+	noInstallFlag bool
 )
 
 var applyCmd = &cobra.Command{
@@ -91,8 +92,12 @@ Use --dry-run to preview changes without applying them.`,
 		// Apply diff (RealBrewRunner satisfies diff.Runner)
 		skipRemove := !removeFlag
 		if verbose && !dryRun {
-			for _, pkg := range result.ToInstall {
-				fmt.Printf("[verbose] Installing %s...\n", pkg.Name)
+			if noInstallFlag {
+				fmt.Printf("[verbose] Skipping installation of %d packages (--no-install)\n", len(result.ToInstall))
+			} else {
+				for _, pkg := range result.ToInstall {
+					fmt.Printf("[verbose] Installing %s...\n", pkg.Name)
+				}
 			}
 			for _, pkg := range result.ToUpgrade {
 				fmt.Printf("[verbose] Upgrading %s...\n", pkg.Name)
@@ -107,7 +112,12 @@ Use --dry-run to preview changes without applying them.`,
 			}
 		}
 
-		report, applyErr := diff.ApplyDiff(result, runner, dryRun, diff.ApplyOptions{SkipRemove: skipRemove})
+		// Print progress before each operation
+		progressCb := func(operation, pkgName string) {
+			fmt.Printf("  → %s %s...\n", operation, pkgName)
+		}
+
+		report, applyErr := diff.ApplyDiff(result, runner, dryRun, diff.ApplyOptions{SkipRemove: skipRemove, SkipInstall: noInstallFlag, OnProgress: progressCb})
 
 		// Print report
 		printApplyReport(report)
@@ -161,5 +171,6 @@ func printApplyReport(report *diff.ApplyReport) {
 
 func init() {
 	applyCmd.Flags().BoolVar(&removeFlag, "remove", false, "also uninstall packages not in the manifest")
+	applyCmd.Flags().BoolVar(&noInstallFlag, "no-install", false, "skip installing missing packages (upgrades only)")
 	rootCmd.AddCommand(applyCmd)
 }
