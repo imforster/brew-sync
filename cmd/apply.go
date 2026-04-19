@@ -61,7 +61,7 @@ Use --dry-run to preview changes without applying them.`,
 			fmt.Println("[verbose] Querying local Homebrew state...")
 		}
 
-		formulae, err := runner.ListLeaves()
+		formulae, err := runner.ListFormulae()
 		if err != nil {
 			return fmt.Errorf("failed to list formulae: %w", err)
 		}
@@ -119,6 +119,42 @@ Use --dry-run to preview changes without applying them.`,
 
 		report, applyErr := diff.ApplyDiff(result, runner, dryRun, diff.ApplyOptions{SkipRemove: skipRemove, SkipInstall: noInstallFlag, OnProgress: progressCb})
 
+		// Update manifest versions for successful upgrades so next run is idempotent
+		if !dryRun {
+			var upgraded []string
+			for _, r := range report.Results {
+				if r.Err == nil && r.Operation == "upgrade" {
+					upgraded = append(upgraded, r.Package)
+				}
+			}
+			if len(upgraded) > 0 {
+				freshFormulae, _ := runner.ListFormulae()
+				freshCasks, _ := runner.ListCasks()
+				freshVersions := make(map[string]string)
+				for _, p := range freshFormulae {
+					freshVersions[p.Name] = p.Version
+				}
+				for _, p := range freshCasks {
+					freshVersions[p.Name] = p.Version
+				}
+				dirty := false
+				for _, name := range upgraded {
+					if v, ok := freshVersions[name]; ok {
+						if markPackage(m, name, func(e *manifest.PackageEntry) { e.Version = v }) {
+							dirty = true
+						}
+					}
+				}
+				if dirty {
+					if err := manager.Save(manifestPath, m); err != nil {
+						fmt.Printf("  ⚠ failed to save manifest: %v\n", err)
+					} else {
+						fmt.Println("  ✓ manifest updated")
+					}
+				}
+			}
+		}
+
 		// Print report
 		printApplyReport(report)
 
@@ -133,6 +169,24 @@ Use --dry-run to preview changes without applying them.`,
 		// Return the apply error (if any) to trigger non-zero exit
 		return applyErr
 	},
+}
+
+// markPackage finds a package by name in formulae or casks and applies the mutator.
+// Returns true if the package was found and modified.
+func markPackage(m *manifest.Manifest, name string, mutate func(*manifest.PackageEntry)) bool {
+	for i := range m.Formulae {
+		if m.Formulae[i].Name == name {
+			mutate(&m.Formulae[i])
+			return true
+		}
+	}
+	for i := range m.Casks {
+		if m.Casks[i].Name == name {
+			mutate(&m.Casks[i])
+			return true
+		}
+	}
+	return false
 }
 
 func printApplyReport(report *diff.ApplyReport) {

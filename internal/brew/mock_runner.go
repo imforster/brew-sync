@@ -22,10 +22,11 @@ type MockBrewRunner struct {
 	Installed bool
 
 	// Call counts for mutating operations.
-	InstallCalls   int
-	UninstallCalls int
-	UpgradeCalls   int
-	UpdateCalls    int
+	InstallCalls      int
+	UninstallCalls    int
+	UpgradeCalls      int
+	UpdateCalls       int
+	ForceInstallCalls int
 
 	// Ordered record of all calls made.
 	Calls []MockCall
@@ -38,21 +39,24 @@ type MockBrewRunner struct {
 	UninstallErr    error
 	UpgradeErr      error
 	UpdateErr       error
+	ForceInstallErr error
 
 	// Per-package error overrides keyed by package name.
 	// If a key is present, its error takes precedence over the default.
-	InstallErrors   map[string]error
-	UninstallErrors map[string]error
-	UpgradeErrors   map[string]error
+	InstallErrors      map[string]error
+	UninstallErrors    map[string]error
+	UpgradeErrors      map[string]error
+	ForceInstallErrors map[string]error
 }
 
 // NewMockBrewRunner creates a MockBrewRunner with sensible defaults.
 func NewMockBrewRunner() *MockBrewRunner {
 	return &MockBrewRunner{
-		Installed:       true,
-		InstallErrors:   make(map[string]error),
-		UninstallErrors: make(map[string]error),
-		UpgradeErrors:   make(map[string]error),
+		Installed:          true,
+		InstallErrors:      make(map[string]error),
+		UninstallErrors:    make(map[string]error),
+		UpgradeErrors:      make(map[string]error),
+		ForceInstallErrors: make(map[string]error),
 	}
 }
 
@@ -100,6 +104,16 @@ func (m *MockBrewRunner) Install(pkg diff.Package) error {
 		return err
 	}
 	return m.InstallErr
+}
+
+// ForceInstall records the call and returns the per-package error if set, otherwise the default.
+func (m *MockBrewRunner) ForceInstall(pkg diff.Package) error {
+	m.ForceInstallCalls++
+	m.Calls = append(m.Calls, MockCall{Operation: "force_install", Package: pkg.Name})
+	if err, ok := m.ForceInstallErrors[pkg.Name]; ok {
+		return err
+	}
+	return m.ForceInstallErr
 }
 
 // Uninstall records the call and returns the per-package error if set, otherwise the default.

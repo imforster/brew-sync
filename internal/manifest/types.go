@@ -20,8 +20,10 @@ type ManifestMetadata struct {
 
 // PackageEntry represents a single package in the manifest with optional machine filters.
 type PackageEntry struct {
-	Name     string   `toml:"name"`
-	Version  string   `toml:"version,omitempty"`
-	OnlyOn   []string `toml:"only_on,omitempty"`
-	ExceptOn []string `toml:"except_on,omitempty"`
+	Name       string   `toml:"name"`
+	Version    string   `toml:"version,omitempty"`
+	OnlyOn     []string `toml:"only_on,omitempty"`
+	ExceptOn   []string `toml:"except_on,omitempty"`
+	Deprecated bool     `toml:"deprecated,omitempty"`
+	Obsolete   bool     `toml:"obsolete,omitempty"`
 }
