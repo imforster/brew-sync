@@ -56,7 +56,7 @@ func TestIntegration_FullWorkflow(t *testing.T) {
 		localCasks[i] = manifest.LocalPackage{Name: pkg.Name, Version: pkg.Version}
 	}
 
-	m := manager.BuildFromLocal(localFormulae, localCasks, taps)
+	m := manager.BuildFromLocal(localFormulae, localCasks, taps, "test-machine", "testuser")
 
 	// Save manifest to a temp "local" directory
 	localDir := t.TempDir()
@@ -609,7 +609,7 @@ func TestIntegration_MergeLocal(t *testing.T) {
 	}
 	localTaps := []string{"homebrew/core", "hashicorp/tap"}
 
-	added, updated := manager.MergeLocal(m, localFormulae, localCasks, localTaps)
+	added, updated := manager.MergeLocal(m, localFormulae, localCasks, localTaps, "test-machine", "testuser")
 
 	// Verify counts
 	if added != 3 { // go + slack + hashicorp/tap

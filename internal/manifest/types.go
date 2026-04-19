@@ -10,10 +10,12 @@ type Manifest struct {
 }
 
 // ManifestMetadata contains information about when and where the manifest was last updated.
+// Machines accumulates every machine tag that has written to this manifest.
 type ManifestMetadata struct {
-	UpdatedAt string `toml:"updated_at"`
-	UpdatedBy string `toml:"updated_by"`
-	Machine   string `toml:"machine"`
+	UpdatedAt string   `toml:"updated_at"`
+	UpdatedBy string   `toml:"updated_by"`
+	Machine   string   `toml:"machine"`
+	Machines  []string `toml:"machines,omitempty"`
 }
 
 // PackageEntry represents a single package in the manifest with optional machine filters.

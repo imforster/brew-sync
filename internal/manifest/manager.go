@@ -60,11 +60,27 @@ type LocalPackage struct {
 	Version string
 }
 
+// AddMachineToList adds machineTag to the machines list if non-empty and not already present.
+// Returns the updated sorted list.
+func AddMachineToList(machines []string, machineTag string) []string {
+	if machineTag == "" {
+		return machines
+	}
+	for _, m := range machines {
+		if m == machineTag {
+			return machines
+		}
+	}
+	machines = append(machines, machineTag)
+	sort.Strings(machines)
+	return machines
+}
+
 // BuildFromLocal creates a new Manifest from the locally installed Homebrew packages.
 // It converts LocalPackage entries to PackageEntry (no machine filters), sorts
 // formulae and casks by name, sorts taps alphabetically, sets version to 1,
-// and records the current time in metadata.
-func (mm *ManifestManager) BuildFromLocal(formulae []LocalPackage, casks []LocalPackage, taps []string) *Manifest {
+// and records the current time, machine tag, and user in metadata.
+func (mm *ManifestManager) BuildFromLocal(formulae []LocalPackage, casks []LocalPackage, taps []string, machineTag, updatedBy string) *Manifest {
 	manifestFormulae := make([]PackageEntry, len(formulae))
 	for i, pkg := range formulae {
 		manifestFormulae[i] = PackageEntry{
@@ -95,6 +111,9 @@ func (mm *ManifestManager) BuildFromLocal(formulae []LocalPackage, casks []Local
 		Version: 1,
 		Metadata: ManifestMetadata{
 			UpdatedAt: time.Now().UTC().Format(time.RFC3339),
+			UpdatedBy: updatedBy,
+			Machine:   machineTag,
+			Machines:  AddMachineToList(nil, machineTag),
 		},
 		Formulae: manifestFormulae,
 		Casks:    manifestCasks,
@@ -106,7 +125,7 @@ func (mm *ManifestManager) BuildFromLocal(formulae []LocalPackage, casks []Local
 // It adds packages not already present and updates versions of existing packages
 // to match local state. Packages in the manifest but not installed locally are preserved.
 // Returns counts of added and version-updated packages.
-func (mm *ManifestManager) MergeLocal(m *Manifest, localFormulae, localCasks []LocalPackage, taps []string) (added, updated int) {
+func (mm *ManifestManager) MergeLocal(m *Manifest, localFormulae, localCasks []LocalPackage, taps []string, machineTag, updatedBy string) (added, updated int) {
 	// Index existing manifest entries
 	formulaeIdx := make(map[string]int, len(m.Formulae))
 	for i, e := range m.Formulae {
@@ -162,6 +181,9 @@ func (mm *ManifestManager) MergeLocal(m *Manifest, localFormulae, localCasks []L
 
 	// Update metadata
 	m.Metadata.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+	m.Metadata.UpdatedBy = updatedBy
+	m.Metadata.Machine = machineTag
+	m.Metadata.Machines = AddMachineToList(m.Metadata.Machines, machineTag)
 
 	return added, updated
 }

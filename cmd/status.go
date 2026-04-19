@@ -33,7 +33,7 @@ Homebrew packages and display a human-readable summary of what would change.`,
 		// Query local brew state
 		runner := brew.NewRealBrewRunner()
 
-		formulae, err := runner.ListFormulae()
+		formulae, err := runner.ListLeaves()
 		if err != nil {
 			return fmt.Errorf("failed to list formulae: %w", err)
 		}

@@ -7,6 +7,13 @@ Synchronize your Homebrew packages across multiple machines using a declarative 
 - [Installation](#installation)
 - [Quick Start](#quick-start)
 - [Commands](#commands)
+  - [init](#brew-sync-init)
+  - [status](#brew-sync-status)
+  - [apply](#brew-sync-apply)
+  - [reconcile](#brew-sync-reconcile)
+  - [merge](#brew-sync-merge)
+  - [push](#brew-sync-push)
+  - [pull](#brew-sync-pull)
 - [Configuration](#configuration)
 - [The Manifest File](#the-manifest-file)
 - [Machine-Specific Packages](#machine-specific-packages)
@@ -46,7 +53,7 @@ make install
 brew-sync init
 ```
 
-This scans your Homebrew installation and creates a `brew-sync.toml` manifest with all your currently installed formulae, casks, and taps.
+This scans your Homebrew installation and creates a `brew-sync.toml` manifest with your explicitly installed formulae, casks, and taps. Dependencies are excluded — Homebrew pulls them in automatically.
 
 ```
 Manifest written to brew-sync.toml (47 formulae, 12 casks, 3 taps)
@@ -117,7 +124,7 @@ Generates a manifest from your current Homebrew installation.
 brew-sync init
 ```
 
-This creates `brew-sync.toml` (or the path set in your config) containing all locally installed formulae, casks, and taps. Packages are sorted alphabetically. No machine filters are applied — the snapshot reflects exactly what is installed.
+This creates `brew-sync.toml` (or the path set in your config) containing your explicitly installed formulae (via `brew leaves`), casks, and taps. Dependencies are excluded — Homebrew installs them automatically. Packages are sorted alphabetically. No machine filters are applied.
 
 ### `brew-sync status`
 
@@ -211,9 +218,23 @@ Manifest updated: 1 added for all machines, 1 added for this machine only, 1 ski
 
 This is useful after pulling a manifest from another machine to incorporate packages unique to this one.
 
+### `brew-sync merge`
+
+Non-interactive alternative to `reconcile`. Unions your local Homebrew state into the existing manifest — adds any packages not already present and updates versions of existing packages to match local state. Packages in the manifest but not installed locally are preserved (they belong to other machines).
+
+```bash
+brew-sync merge
+```
+
+```
+Manifest merged: 5 added, 3 versions updated (52 formulae, 14 casks, 4 taps)
+```
+
+This is equivalent to running `reconcile` and choosing "add for all machines" for every local-only package. Use `reconcile` instead if you want to selectively mark some packages as machine-specific.
+
 ### `brew-sync push`
 
-Snapshots your local Homebrew state, builds a manifest, and pushes it to the configured remote backend.
+Snapshots your explicitly installed packages (not dependencies), builds a manifest, and pushes it to the configured remote backend.
 
 ```bash
 brew-sync push
@@ -290,7 +311,7 @@ remote_path = "/Volumes/shared/brew-sync.toml"
 
 ## The Manifest File
 
-The manifest (`brew-sync.toml`) is a TOML file that declares your desired packages.
+The manifest (`brew-sync.toml`) is a TOML file that declares your desired packages. It tracks only top-level packages you explicitly installed — not their transitive dependencies. Homebrew manages dependencies automatically when you install a formula, so the manifest stays lean and focused on what you actually chose to install.
 
 ### Example
 
@@ -301,6 +322,7 @@ version = 1
 updated_at = "2025-01-15T10:30:00Z"
 updated_by = "alice"
 machine = "alice-macbook"
+machines = ["alice-macbook", "work-laptop", "home-desktop"]
 
 taps = ["homebrew/cask-fonts", "hashicorp/tap"]
 
@@ -328,7 +350,8 @@ except_on = ["home-desktop"]
 - `version` — Schema version (must be `1`)
 - `metadata.updated_at` — Timestamp of last update
 - `metadata.updated_by` — Who last updated the manifest
-- `metadata.machine` — Machine that generated the manifest
+- `metadata.machine` — Machine that last wrote the manifest
+- `metadata.machines` — All machines that have contributed to this manifest
 - `taps` — Third-party Homebrew repositories (format: `owner/repo`)
 - `formulae` — Command-line packages
 - `casks` — GUI application packages
@@ -355,6 +378,20 @@ brew-sync validates the manifest and reports all errors at once:
 ## Machine-Specific Packages
 
 Use `only_on` and `except_on` to control which packages install on which machines. The machine is identified by the `machine_tag` in your config file.
+
+**Important**: Set `machine_tag` in your config on every machine. Without it, machine-specific filtering is disabled and `reconcile` won't offer the option to pin packages to this machine.
+
+```toml
+# ~/.config/brew-sync/config.toml
+machine_tag = "work-macbook"
+```
+
+Every time a machine writes to the manifest (via `init`, `push`, `merge`, or `reconcile`), its tag is added to the `machines` list in the metadata. This gives you a registry of all machines in the sync group:
+
+```toml
+[metadata]
+machines = ["home-desktop", "work-macbook"]
+```
 
 ### Install only on specific machines
 
@@ -429,7 +466,7 @@ brew-sync push
 On the new machine:
 
 ```bash
-# Create a config file with the same sync backend
+# Create a config file — set a unique machine_tag for this machine
 mkdir -p ~/.config/brew-sync
 cat > ~/.config/brew-sync/config.toml << 'EOF'
 manifest_path = "brew-sync.toml"
@@ -444,7 +481,7 @@ EOF
 brew-sync pull
 brew-sync status          # review what will change
 brew-sync apply           # install missing packages, upgrade outdated ones
-brew-sync reconcile       # add local-only packages to the manifest
+brew-sync reconcile       # add local-only packages (choose per-machine or all)
 brew-sync push            # push updated manifest back
 ```
 
@@ -460,11 +497,15 @@ brew-sync apply
 ### After installing new packages manually
 
 ```bash
-# Push updated state to remote
+# Option 1: Push a full snapshot (overwrites manifest with local state)
+brew-sync push
+
+# Option 2: Merge local packages into the existing manifest (preserves other machines' packages)
+brew-sync merge
 brew-sync push
 ```
 
-Other machines can then `pull` and `apply` to pick up the new packages.
+Use `merge` + `push` when other machines have already added packages to the manifest that you don't have locally — a plain `push` would drop those. Use `reconcile` instead of `merge` if you want to selectively mark some packages as machine-specific.
 
 ### Safe review before applying
 

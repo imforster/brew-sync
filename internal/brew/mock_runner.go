@@ -65,6 +65,15 @@ func (m *MockBrewRunner) ListFormulae() ([]diff.Package, error) {
 	return m.Formulae, nil
 }
 
+// ListLeaves returns the same as ListFormulae for the mock (tests control the input).
+func (m *MockBrewRunner) ListLeaves() ([]diff.Package, error) {
+	m.Calls = append(m.Calls, MockCall{Operation: "list_leaves"})
+	if m.ListFormulaeErr != nil {
+		return nil, m.ListFormulaeErr
+	}
+	return m.Formulae, nil
+}
+
 // ListCasks returns the configured casks list or error.
 func (m *MockBrewRunner) ListCasks() ([]diff.Package, error) {
 	m.Calls = append(m.Calls, MockCall{Operation: "list_casks"})

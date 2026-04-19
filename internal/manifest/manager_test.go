@@ -310,7 +310,7 @@ func TestValidate_MultipleErrors(t *testing.T) {
 
 func TestBuildFromLocal_Empty(t *testing.T) {
 	mgr := NewManifestManager()
-	m := mgr.BuildFromLocal(nil, nil, nil)
+	m := mgr.BuildFromLocal(nil, nil, nil, "", "")
 
 	if m.Version != 1 {
 		t.Errorf("Version: got %d, want 1", m.Version)
@@ -352,7 +352,7 @@ func TestBuildFromLocal_Populated(t *testing.T) {
 	taps := []string{"hashicorp/tap", "homebrew/core"}
 
 	before := time.Now().UTC()
-	m := mgr.BuildFromLocal(formulae, casks, taps)
+	m := mgr.BuildFromLocal(formulae, casks, taps, "test-machine", "testuser")
 	after := time.Now().UTC()
 
 	// Version
@@ -429,7 +429,7 @@ func TestBuildFromLocal_SortsEntries(t *testing.T) {
 	}
 	taps := []string{"z-org/z-repo", "a-org/a-repo", "m-org/m-repo"}
 
-	m := mgr.BuildFromLocal(formulae, casks, taps)
+	m := mgr.BuildFromLocal(formulae, casks, taps, "", "")
 
 	// Verify formulae are sorted
 	formulaeNames := make([]string, len(m.Formulae))

@@ -21,7 +21,7 @@ starting point for synchronization.`,
 		manager := manifest.NewManifestManager()
 
 		// Query local brew state
-		formulae, err := runner.ListFormulae()
+		formulae, err := runner.ListLeaves()
 		if err != nil {
 			return fmt.Errorf("failed to list formulae: %w", err)
 		}
@@ -54,7 +54,9 @@ starting point for synchronization.`,
 		}
 
 		// Build manifest from local state
-		m := manager.BuildFromLocal(localFormulae, localCasks, taps)
+		machineTag := getMachineTag(cfg)
+		updatedBy := getUpdatedBy()
+		m := manager.BuildFromLocal(localFormulae, localCasks, taps, machineTag, updatedBy)
 
 		// Save manifest to configured path
 		outputPath := getManifestPath(cfg)

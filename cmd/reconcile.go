@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"brew-sync/internal/brew"
 	"brew-sync/internal/diff"
@@ -42,7 +43,7 @@ packages that are unique to this machine.`,
 		// Query local brew state
 		runner := brew.NewRealBrewRunner()
 
-		formulae, err := runner.ListFormulae()
+		formulae, err := runner.ListLeaves()
 		if err != nil {
 			return fmt.Errorf("failed to list formulae: %w", err)
 		}
@@ -140,6 +141,10 @@ packages that are unique to this machine.`,
 
 		// Save updated manifest
 		if added+addedLocal > 0 {
+			m.Metadata.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+			m.Metadata.UpdatedBy = getUpdatedBy()
+			m.Metadata.Machine = machineTag
+			m.Metadata.Machines = manifest.AddMachineToList(m.Metadata.Machines, machineTag)
 			if err := manager.Save(manifestPath, m); err != nil {
 				return fmt.Errorf("failed to save manifest: %w", err)
 			}
