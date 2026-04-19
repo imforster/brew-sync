@@ -8,6 +8,7 @@ type DiffResult struct {
 	ToRemove  []manifest.PackageEntry
 	ToUpgrade []manifest.PackageEntry
 	Unchanged []manifest.PackageEntry
+	Skipped   []manifest.PackageEntry // deprecated or obsolete — not actionable
 }
 
 // LocalState represents the current Homebrew installation state on the local machine.

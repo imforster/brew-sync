@@ -141,17 +141,22 @@ Verbose output shows individual packages:
 
 ```
 3 packages to install
-1 packages to remove
 0 packages to upgrade
 44 packages unchanged
+1 deprecated packages (cannot be installed)
+2 obsolete packages (no longer in Homebrew)
 
 To install:
   + ripgrep
   + fd
   + bat
 
-To remove:
-  - oldtool
+Deprecated:
+  ⚠ tldr (deprecated)
+
+Obsolete:
+  ✗ cockroach (obsolete — no longer in Homebrew)
+  ✗ notepadnext (obsolete — no longer in Homebrew)
 ```
 
 ### `brew-sync apply`
@@ -175,6 +180,12 @@ brew-sync apply --verbose
 ```
 
 If some packages fail, brew-sync continues with the rest and reports failures at the end. The exit code is non-zero when any operation fails.
+
+During apply, brew-sync automatically detects and handles common Homebrew errors:
+
+- **Deprecated formulae** — Marked `deprecated = true` in the manifest and skipped on future runs.
+- **Obsolete packages** — Formulae or casks that no longer exist in Homebrew are marked `obsolete = true` in the manifest and skipped on future runs.
+- **Already-installed casks** — If an app already exists in `/Applications` (installed outside Homebrew), you're prompted to force-install (letting Homebrew manage it) or skip.
 
 ### `brew-sync reconcile`
 
@@ -343,6 +354,14 @@ name = "firefox"
 [[casks]]
 name = "slack"
 except_on = ["home-desktop"]
+
+[[formulae]]
+name = "tldr"
+deprecated = true
+
+[[formulae]]
+name = "cockroach"
+obsolete = true
 ```
 
 ### Fields
@@ -364,6 +383,10 @@ Each package entry supports:
 | `version` | No | Pin to a specific version |
 | `only_on` | No | Only install on these machines |
 | `except_on` | No | Skip installation on these machines |
+| `deprecated` | No | Marked automatically when Homebrew reports the formula as deprecated |
+| `obsolete` | No | Marked automatically when the formula/cask no longer exists in Homebrew |
+
+Deprecated and obsolete packages are skipped during `apply` and shown separately in `status`.
 
 ### Validation Rules
 

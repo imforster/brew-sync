@@ -21,6 +21,8 @@ type BrewRunner interface {
 	ListTaps() ([]string, error)
 	// Install installs a package. If pkg.Version is set, installs that specific version.
 	Install(pkg diff.Package) error
+	// ForceInstall installs a cask with --force, overwriting an existing app.
+	ForceInstall(pkg diff.Package) error
 	// Uninstall removes a package.
 	Uninstall(pkg diff.Package) error
 	// Upgrade upgrades a package to the latest (or specified) version.
@@ -118,8 +120,25 @@ func (r *RealBrewRunner) ListTaps() ([]string, error) {
 // and those already have @ as part of pkg.Name.
 func (r *RealBrewRunner) Install(pkg diff.Package) error {
 	cmd := exec.Command("brew", "install", pkg.Name)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		out := string(output)
+		kind := ClassifyInstallError(out)
+		return &BrewError{
+			Kind:    kind,
+			Package: pkg.Name,
+			Output:  out,
+			Wrapped: fmt.Errorf("failed to install %s: %s: %w", pkg.Name, out, err),
+		}
+	}
+	return nil
+}
+
+// ForceInstall runs `brew install --force <name>` for casks that already have an app on disk.
+func (r *RealBrewRunner) ForceInstall(pkg diff.Package) error {
+	cmd := exec.Command("brew", "install", "--force", pkg.Name)
 	if output, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("failed to install %s: %s: %w", pkg.Name, string(output), err)
+		return fmt.Errorf("failed to force-install %s: %s: %w", pkg.Name, string(output), err)
 	}
 	return nil
 }

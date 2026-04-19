@@ -41,7 +41,11 @@ func ComputeDiff(m *manifest.Manifest, local *LocalState, machineTag string) *Di
 		seen[entry.Name] = true
 		localVersion, exists := localFormulaeMap[entry.Name]
 		if !exists {
-			result.ToInstall = append(result.ToInstall, entry)
+			if entry.Deprecated || entry.Obsolete {
+				result.Skipped = append(result.Skipped, entry)
+			} else {
+				result.ToInstall = append(result.ToInstall, entry)
+			}
 		} else if entry.Version != "" && entry.Version != localVersion {
 			result.ToUpgrade = append(result.ToUpgrade, entry)
 		} else {
@@ -53,7 +57,11 @@ func ComputeDiff(m *manifest.Manifest, local *LocalState, machineTag string) *Di
 		seen[entry.Name] = true
 		localVersion, exists := localCasksMap[entry.Name]
 		if !exists {
-			result.ToInstall = append(result.ToInstall, entry)
+			if entry.Deprecated || entry.Obsolete {
+				result.Skipped = append(result.Skipped, entry)
+			} else {
+				result.ToInstall = append(result.ToInstall, entry)
+			}
 		} else if entry.Version != "" && entry.Version != localVersion {
 			result.ToUpgrade = append(result.ToUpgrade, entry)
 		} else {
