@@ -35,7 +35,7 @@ for every local-only package, plus updating all version drift.`,
 
 		runner := brew.NewRealBrewRunner()
 
-		formulae, err := runner.ListFormulae()
+		formulae, err := runner.ListLeaves()
 		if err != nil {
 			return fmt.Errorf("failed to list formulae: %w", err)
 		}
@@ -60,7 +60,9 @@ for every local-only package, plus updating all version drift.`,
 			localCasks[i] = manifest.LocalPackage{Name: pkg.Name, Version: pkg.Version}
 		}
 
-		added, updated := manager.MergeLocal(m, localFormulae, localCasks, taps)
+		machineTag := getMachineTag(cfg)
+		updatedBy := getUpdatedBy()
+		added, updated := manager.MergeLocal(m, localFormulae, localCasks, taps, machineTag, updatedBy)
 
 		if err := manager.Save(manifestPath, m); err != nil {
 			return fmt.Errorf("failed to save manifest: %w", err)

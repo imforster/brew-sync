@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"os/user"
 
 	"brew-sync/internal/brew"
 	"brew-sync/internal/config"
@@ -87,6 +88,13 @@ func getManifestPath(cfg *config.Config) string {
 func getMachineTag(cfg *config.Config) string {
 	if cfg != nil {
 		return cfg.MachineTag
+	}
+	return ""
+}
+// getUpdatedBy returns the current OS username for manifest metadata.
+func getUpdatedBy() string {
+	if u, err := user.Current(); err == nil {
+		return u.Username
 	}
 	return ""
 }

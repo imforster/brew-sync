@@ -61,7 +61,7 @@ Use --dry-run to preview changes without applying them.`,
 			fmt.Println("[verbose] Querying local Homebrew state...")
 		}
 
-		formulae, err := runner.ListFormulae()
+		formulae, err := runner.ListLeaves()
 		if err != nil {
 			return fmt.Errorf("failed to list formulae: %w", err)
 		}

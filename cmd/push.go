@@ -27,7 +27,7 @@ If no configuration file is found, the manifest is saved locally only.`,
 			fmt.Println("[verbose] Querying local Homebrew state...")
 		}
 
-		formulae, err := runner.ListFormulae()
+		formulae, err := runner.ListLeaves()
 		if err != nil {
 			return fmt.Errorf("failed to list formulae: %w", err)
 		}
@@ -68,10 +68,12 @@ If no configuration file is found, the manifest is saved locally only.`,
 			fmt.Println("[verbose] Building manifest from local state...")
 		}
 
-		m := manager.BuildFromLocal(localFormulae, localCasks, taps)
+		cfg, cfgErr := loadConfig(GetConfigPath())
+		machineTag := getMachineTag(cfg)
+		updatedBy := getUpdatedBy()
+		m := manager.BuildFromLocal(localFormulae, localCasks, taps, machineTag, updatedBy)
 
 		// Step 4: Save manifest locally using configured path
-		cfg, cfgErr := loadConfig(GetConfigPath())
 		outputPath := getManifestPath(cfg)
 
 		if verbose {

@@ -12,6 +12,9 @@ import (
 type BrewRunner interface {
 	// ListFormulae returns all installed Homebrew formulae with their versions.
 	ListFormulae() ([]diff.Package, error)
+	// ListLeaves returns only explicitly installed formulae (not auto-installed dependencies).
+	// These are packages the user installed directly; dependencies are pulled in automatically.
+	ListLeaves() ([]diff.Package, error)
 	// ListCasks returns all installed Homebrew casks with their versions.
 	ListCasks() ([]diff.Package, error)
 	// ListTaps returns all configured Homebrew taps.
@@ -50,6 +53,37 @@ func (r *RealBrewRunner) ListFormulae() ([]diff.Package, error) {
 		return nil, fmt.Errorf("failed to list formulae: %w", err)
 	}
 	return parseBrewListOutput(string(output)), nil
+}
+
+// ListLeaves runs `brew leaves` to get explicitly installed formulae, then
+// cross-references with `brew list --formula --versions` to attach version info.
+// This returns only top-level packages (not auto-installed dependencies).
+func (r *RealBrewRunner) ListLeaves() ([]diff.Package, error) {
+	// Get leaf names
+	leavesCmd := exec.Command("brew", "leaves")
+	leavesOutput, err := leavesCmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("failed to list leaves: %w", err)
+	}
+	leafNames := make(map[string]bool)
+	for _, name := range parseLines(string(leavesOutput)) {
+		leafNames[name] = true
+	}
+
+	// Get all formulae with versions
+	allFormulae, err := r.ListFormulae()
+	if err != nil {
+		return nil, err
+	}
+
+	// Filter to only leaves
+	var leaves []diff.Package
+	for _, pkg := range allFormulae {
+		if leafNames[pkg.Name] {
+			leaves = append(leaves, pkg)
+		}
+	}
+	return leaves, nil
 }
 
 // ListCasks runs `brew list --cask --versions` and parses the output.
