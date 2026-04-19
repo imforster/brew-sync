@@ -11,7 +11,8 @@
 
 # Path to the manifest file that tracks your packages.
 # Default: "brew-sync.toml" in the current directory.
-manifest_path = "brew-sync.toml"
+# Use an absolute path or ~ prefix to avoid writing relative to the working directory.
+manifest_path = "~/.config/brew-sync/brew-sync.toml"
 
 # A unique identifier for this machine. Used with only_on / except_on filters
 # in the manifest to control which packages install on which machines.

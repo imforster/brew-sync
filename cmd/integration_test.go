@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"brew-sync/internal/brew"
+	"brew-sync/internal/config"
 	"brew-sync/internal/diff"
 	"brew-sync/internal/manifest"
 	"brew-sync/internal/sync"
@@ -435,9 +436,7 @@ remote_path = "/shared/brew-sync.toml"
 	}
 
 	// Verify defaults when config has empty values
-	emptyCfg := &manifest.Manifest{}
-	_ = emptyCfg // just to show we're testing the zero-value path
-	emptyConfig := loadConfigGraceful()
+	emptyConfig := &config.Config{}
 	if got := getManifestPath(emptyConfig); got != defaultManifestPath {
 		t.Errorf("getManifestPath(empty): got %q, want %q", got, defaultManifestPath)
 	}

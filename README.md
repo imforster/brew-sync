@@ -282,7 +282,7 @@ The example config includes step-by-step instructions for setting up GitHub as y
 
 ```toml
 # Path to the manifest file (default: brew-sync.toml)
-manifest_path = "brew-sync.toml"
+manifest_path = "~/.config/brew-sync/brew-sync.toml"
 
 # Identifier for this machine, used for per-machine package filtering
 machine_tag = "work-macbook"
@@ -469,7 +469,7 @@ On the new machine:
 # Create a config file — set a unique machine_tag for this machine
 mkdir -p ~/.config/brew-sync
 cat > ~/.config/brew-sync/config.toml << 'EOF'
-manifest_path = "brew-sync.toml"
+manifest_path = "~/.config/brew-sync/brew-sync.toml"
 machine_tag = "new-macbook"
 sync_backend = "file"
 
