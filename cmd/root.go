@@ -76,11 +76,18 @@ func loadConfigGraceful() *config.Config {
 
 // getManifestPath returns the manifest path from config if set,
 // otherwise returns the default "brew-sync.toml".
+// Expands a leading ~ to the user's home directory.
 func getManifestPath(cfg *config.Config) string {
+	path := defaultManifestPath
 	if cfg != nil && cfg.ManifestPath != "" {
-		return cfg.ManifestPath
+		path = cfg.ManifestPath
 	}
-	return defaultManifestPath
+	if len(path) > 0 && path[0] == '~' {
+		if home, err := os.UserHomeDir(); err == nil {
+			path = home + path[1:]
+		}
+	}
+	return path
 }
 
 // getMachineTag returns the machine tag from config if set,

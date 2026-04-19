@@ -67,7 +67,13 @@ func (r *RealBrewRunner) ListLeaves() ([]diff.Package, error) {
 	}
 	leafNames := make(map[string]bool)
 	for _, name := range parseLines(string(leavesOutput)) {
+		// brew leaves returns tap-prefixed names for third-party packages
+		// (e.g. "cockroachdb/tap/cockroach") but brew list returns short names
+		// (e.g. "cockroach"). Store both forms so the lookup works either way.
 		leafNames[name] = true
+		if i := strings.LastIndex(name, "/"); i >= 0 {
+			leafNames[name[i+1:]] = true
+		}
 	}
 
 	// Get all formulae with versions

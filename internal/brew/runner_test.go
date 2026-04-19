@@ -122,3 +122,52 @@ func TestParseLines_WhitespaceTrimmed(t *testing.T) {
 		t.Errorf("line 1: got %q, want %q", got[1], "homebrew/cask")
 	}
 }
+
+// TestLeafNameMatching_TapPrefixStripping verifies that tap-prefixed names from
+// `brew leaves` (e.g. "cockroachdb/tap/cockroach") match short names from
+// `brew list --formula --versions` (e.g. "cockroach").
+func TestLeafNameMatching_TapPrefixStripping(t *testing.T) {
+	leavesOutput := "git\ncockroachdb/tap/cockroach\nmongodb/brew/mongodb-community@8.0\n"
+	formulaeOutput := "git 2.53.0\ncockroach 26.1.2\nmongodb-community@8.0 8.0.20\nreadline 8.3.3\n"
+
+	// Build leaf name map the same way ListLeaves does
+	leafNames := make(map[string]bool)
+	for _, name := range parseLines(leavesOutput) {
+		leafNames[name] = true
+		if i := len(name) - 1; i >= 0 {
+			for j := i; j >= 0; j-- {
+				if name[j] == '/' {
+					leafNames[name[j+1:]] = true
+					break
+				}
+			}
+		}
+	}
+
+	allFormulae := parseBrewListOutput(formulaeOutput)
+
+	var leaves []diff.Package
+	for _, pkg := range allFormulae {
+		if leafNames[pkg.Name] {
+			leaves = append(leaves, pkg)
+		}
+	}
+
+	// Should include git, cockroach, and mongodb-community@8.0 but NOT readline
+	if len(leaves) != 3 {
+		t.Fatalf("expected 3 leaves, got %d: %v", len(leaves), leaves)
+	}
+
+	want := map[string]string{
+		"git":                    "2.53.0",
+		"cockroach":              "26.1.2",
+		"mongodb-community@8.0": "8.0.20",
+	}
+	for _, pkg := range leaves {
+		if wantVer, ok := want[pkg.Name]; !ok {
+			t.Errorf("unexpected leaf: %s", pkg.Name)
+		} else if pkg.Version != wantVer {
+			t.Errorf("leaf %s: got version %s, want %s", pkg.Name, pkg.Version, wantVer)
+		}
+	}
+}
