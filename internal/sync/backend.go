@@ -1,11 +1,15 @@
 package sync
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"time"
 )
+
+const gitTimeout = 60 * time.Second
 
 // SyncBackend abstracts pushing and pulling the manifest to/from a remote location.
 type SyncBackend interface {
@@ -103,7 +107,9 @@ func (g *GitBackend) clone() error {
 		return fmt.Errorf("failed to create parent directory for git working directory: %w", err)
 	}
 
-	cmd := exec.Command("git", "clone", "--branch", g.Branch, "--single-branch", g.RepoURL, g.WorkDir)
+	ctx, cancel := context.WithTimeout(context.Background(), gitTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "git", "clone", "--branch", g.Branch, "--single-branch", g.RepoURL, g.WorkDir)
 	if output, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("failed to clone %s (branch %s): %s: %w", g.RepoURL, g.Branch, string(output), err)
 	}
@@ -112,7 +118,9 @@ func (g *GitBackend) clone() error {
 
 // pull runs git pull in the working directory.
 func (g *GitBackend) pull() error {
-	cmd := exec.Command("git", "pull", "origin", g.Branch)
+	ctx, cancel := context.WithTimeout(context.Background(), gitTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "git", "pull", "origin", g.Branch)
 	cmd.Dir = g.WorkDir
 	if output, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("failed to pull from %s (branch %s): %s: %w", g.RepoURL, g.Branch, string(output), err)
@@ -122,7 +130,9 @@ func (g *GitBackend) pull() error {
 
 // gitCommand runs a git command in the working directory.
 func (g *GitBackend) gitCommand(args ...string) error {
-	cmd := exec.Command("git", args...)
+	ctx, cancel := context.WithTimeout(context.Background(), gitTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Dir = g.WorkDir
 	if output, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("%s: %w", string(output), err)
