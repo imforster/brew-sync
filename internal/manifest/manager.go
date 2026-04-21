@@ -248,9 +248,6 @@ func (mm *ManifestManager) Validate(m *Manifest) error {
 // isValidTapFormat checks that a tap string matches the owner/repo format:
 // exactly one "/" with non-empty parts on both sides.
 func isValidTapFormat(tap string) bool {
-	parts := strings.SplitN(tap, "/", 3)
-	if len(parts) != 2 {
-		return false
-	}
-	return parts[0] != "" && parts[1] != ""
+	parts := strings.SplitN(tap, "/", 2)
+	return len(parts) == 2 && parts[0] != "" && parts[1] != "" && !strings.Contains(parts[1], "/")
 }
