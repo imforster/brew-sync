@@ -81,6 +81,28 @@ Use --dry-run to preview changes without applying them.`,
 			Casks:    casks,
 		}
 
+		// Apply missing taps before packages so tap-prefixed formulae can be installed.
+		if !dryRun {
+			localTaps, err := runner.ListTaps()
+			if err != nil {
+				return fmt.Errorf("failed to list taps: %w", err)
+			}
+			localTapSet := make(map[string]bool, len(localTaps))
+			for _, t := range localTaps {
+				localTapSet[t] = true
+			}
+			for _, tap := range m.Taps {
+				if !localTapSet[tap] {
+					fmt.Printf("  → tapping %s...\n", tap)
+					if err := runner.Tap(tap); err != nil {
+						fmt.Printf("  ✗ tap %s: %v\n", tap, err)
+					} else {
+						fmt.Printf("  ✓ tap %s\n", tap)
+					}
+				}
+			}
+		}
+
 		// Compute diff with machine tag from config
 		result := diff.ComputeDiff(m, localState, getMachineTag(cfg))
 
