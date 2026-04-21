@@ -49,7 +49,6 @@ func (r *ApplyReport) HasErrors() bool {
 
 // ApplyOptions controls the behavior of ApplyDiff.
 type ApplyOptions struct {
-	DryRun      bool
 	SkipRemove  bool
 	SkipInstall bool
 	OnProgress  func(operation, pkgName string)
