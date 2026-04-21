@@ -27,6 +27,7 @@ type MockBrewRunner struct {
 	UpgradeCalls      int
 	UpdateCalls       int
 	ForceInstallCalls int
+	TapCalls          int
 
 	// Ordered record of all calls made.
 	Calls []MockCall
@@ -40,6 +41,7 @@ type MockBrewRunner struct {
 	UpgradeErr      error
 	UpdateErr       error
 	ForceInstallErr error
+	TapErr          error
 
 	// Per-package error overrides keyed by package name.
 	// If a key is present, its error takes precedence over the default.
@@ -134,6 +136,13 @@ func (m *MockBrewRunner) Upgrade(pkg diff.Package) error {
 		return err
 	}
 	return m.UpgradeErr
+}
+
+// Tap records the call and returns the configured error.
+func (m *MockBrewRunner) Tap(name string) error {
+	m.TapCalls++
+	m.Calls = append(m.Calls, MockCall{Operation: "tap", Package: name})
+	return m.TapErr
 }
 
 // Update records the call and returns the configured error.
