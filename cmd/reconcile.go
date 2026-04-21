@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
@@ -141,6 +142,8 @@ packages that are unique to this machine.`,
 
 		// Save updated manifest
 		if added+addedLocal > 0 {
+			sort.Slice(m.Formulae, func(i, j int) bool { return m.Formulae[i].Name < m.Formulae[j].Name })
+			sort.Slice(m.Casks, func(i, j int) bool { return m.Casks[i].Name < m.Casks[j].Name })
 			m.Metadata.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
 			m.Metadata.UpdatedBy = getUpdatedBy()
 			m.Metadata.Machine = machineTag
