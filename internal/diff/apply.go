@@ -49,7 +49,6 @@ func (r *ApplyReport) HasErrors() bool {
 
 // ApplyOptions controls the behavior of ApplyDiff.
 type ApplyOptions struct {
-	DryRun      bool
 	SkipRemove  bool
 	SkipInstall bool
 	OnProgress  func(operation, pkgName string)
@@ -125,6 +124,18 @@ func ApplyDiff(diff *DiffResult, runner Runner, dryRun bool, opts ...ApplyOption
 			}
 			err := runner.Uninstall(Package{Name: pkg.Name})
 			report.RecordResult("remove", pkg.Name, err)
+		}
+	}
+
+	// Populate count fields to mirror the dry-run counts for any caller that inspects them.
+	for _, r := range report.Results {
+		switch r.Operation {
+		case "install":
+			report.InstallCount++
+		case "upgrade":
+			report.UpgradeCount++
+		case "remove":
+			report.RemoveCount++
 		}
 	}
 
