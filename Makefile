@@ -3,7 +3,11 @@
 BINARY_NAME := brew-sync
 GO := go
 GOFLAGS :=
-LDFLAGS :=
+
+# Version info injected at build time
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+COMMIT  := $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
+LDFLAGS := -X brew-sync/cmd.Version=$(VERSION) -X brew-sync/cmd.Commit=$(COMMIT)
 
 # Build output directory
 BUILD_DIR := build
