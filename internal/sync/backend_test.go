@@ -5,6 +5,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"brew-sync/internal/config"
 )
@@ -171,6 +172,98 @@ func TestGitBackend_PushPull(t *testing.T) {
 	}
 	if string(got) != string(content) {
 		t.Errorf("pulled content mismatch:\ngot:  %q\nwant: %q", string(got), string(content))
+	}
+}
+
+func TestGitBackend_PullReclonesOnCorruptedRepo(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not found in PATH, skipping git backend test")
+	}
+
+	// Create a bare repo with a manifest.
+	bareRepo := filepath.Join(t.TempDir(), "test-repo.git")
+	if out, err := exec.Command("git", "init", "--bare", bareRepo).CombinedOutput(); err != nil {
+		t.Fatalf("failed to create bare repo: %s: %v", string(out), err)
+	}
+
+	setupDir := filepath.Join(t.TempDir(), "setup")
+	if out, err := exec.Command("git", "clone", bareRepo, setupDir).CombinedOutput(); err != nil {
+		t.Fatalf("failed to clone bare repo: %s: %v", string(out), err)
+	}
+	for _, args := range [][]string{
+		{"config", "user.email", "test@test.com"},
+		{"config", "user.name", "Test"},
+	} {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = setupDir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git config failed: %s: %v", string(out), err)
+		}
+	}
+
+	content := []byte("version = 1\ntaps = [\"homebrew/core\"]\n")
+	if err := os.WriteFile(filepath.Join(setupDir, "brew-sync.toml"), content, 0o644); err != nil {
+		t.Fatalf("failed to write manifest: %v", err)
+	}
+	for _, args := range [][]string{
+		{"add", "."},
+		{"commit", "-m", "add manifest"},
+		{"push", "origin", "main"},
+	} {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = setupDir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v failed: %s: %v", args, string(out), err)
+		}
+	}
+
+	// Create a work dir with a corrupted .git directory.
+	workDir := filepath.Join(t.TempDir(), "git-work")
+	if err := os.MkdirAll(filepath.Join(workDir, ".git"), 0o755); err != nil {
+		t.Fatalf("failed to create corrupted .git: %v", err)
+	}
+
+	gb := NewGitBackend(bareRepo, "main", workDir)
+	destFile := filepath.Join(t.TempDir(), "brew-sync.toml")
+
+	if err := gb.Pull(destFile); err != nil {
+		t.Fatalf("Pull should recover from corrupted repo, got: %v", err)
+	}
+
+	got, err := os.ReadFile(destFile)
+	if err != nil {
+		t.Fatalf("failed to read pulled file: %v", err)
+	}
+	if string(got) != string(content) {
+		t.Errorf("pulled content mismatch:\ngot:  %q\nwant: %q", string(got), string(content))
+	}
+}
+
+func TestGitBackend_CloneTimesOut(t *testing.T) {
+	// Create a fake "git" that sleeps forever.
+	fakeGit := filepath.Join(t.TempDir(), "git")
+	if err := os.WriteFile(fakeGit, []byte("#!/bin/sh\nsleep 60\n"), 0o755); err != nil {
+		t.Fatalf("failed to write fake git: %v", err)
+	}
+
+	// Put fake git first in PATH.
+	t.Setenv("PATH", filepath.Dir(fakeGit)+":"+os.Getenv("PATH"))
+
+	workDir := filepath.Join(t.TempDir(), "git-work")
+	gb := NewGitBackend("https://example.com/repo.git", "main", workDir)
+	gb.Timeout = 1 * time.Second
+
+	destFile := filepath.Join(t.TempDir(), "brew-sync.toml")
+
+	start := time.Now()
+	err := gb.Pull(destFile)
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Fatal("expected timeout error, got nil")
+	}
+	if elapsed > 5*time.Second {
+		t.Errorf("expected ~1s timeout, but took %s", elapsed)
 	}
 }
 
