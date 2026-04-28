@@ -81,9 +81,9 @@ func TestGitBackend_PushPull(t *testing.T) {
 		t.Skip("git not found in PATH, skipping git backend test")
 	}
 
-	// Create a local bare repository.
+	// Create a local bare repository with main as default branch.
 	bareRepo := filepath.Join(t.TempDir(), "test-repo.git")
-	if out, err := exec.Command("git", "init", "--bare", bareRepo).CombinedOutput(); err != nil {
+	if out, err := exec.Command("git", "init", "--bare", "--initial-branch=main", bareRepo).CombinedOutput(); err != nil {
 		t.Fatalf("failed to create bare repo: %s: %v", string(out), err)
 	}
 
@@ -181,7 +181,7 @@ func TestGitBackend_DoublePushNoError(t *testing.T) {
 	}
 
 	bareRepo := filepath.Join(t.TempDir(), "repo.git")
-	if out, err := exec.Command("git", "init", "--bare", bareRepo).CombinedOutput(); err != nil {
+	if out, err := exec.Command("git", "init", "--bare", "--initial-branch=main", bareRepo).CombinedOutput(); err != nil {
 		t.Fatalf("bare init: %s: %v", out, err)
 	}
 
@@ -251,7 +251,7 @@ func TestGitBackend_PullReclonesOnCorruptedRepo(t *testing.T) {
 
 	// Create a bare repo with a manifest.
 	bareRepo := filepath.Join(t.TempDir(), "test-repo.git")
-	if out, err := exec.Command("git", "init", "--bare", bareRepo).CombinedOutput(); err != nil {
+	if out, err := exec.Command("git", "init", "--bare", "--initial-branch=main", bareRepo).CombinedOutput(); err != nil {
 		t.Fatalf("failed to create bare repo: %s: %v", string(out), err)
 	}
 
