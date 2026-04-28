@@ -35,10 +35,11 @@ func ComputeDiff(m *manifest.Manifest, local *LocalState, machineTag string) *Di
 	// Step 3: Walk manifest entries
 	// Invariant: each manifest entry is classified into exactly one of
 	//            {ToInstall, ToUpgrade, Unchanged}
-	seen := make(map[string]bool)
+	seenFormulae := make(map[string]bool)
+	seenCasks := make(map[string]bool)
 
 	for _, entry := range formulae {
-		seen[entry.Name] = true
+		seenFormulae[entry.Name] = true
 		localVersion, exists := localFormulaeMap[entry.Name]
 		if !exists {
 			if entry.Deprecated || entry.Obsolete {
@@ -54,7 +55,7 @@ func ComputeDiff(m *manifest.Manifest, local *LocalState, machineTag string) *Di
 	}
 
 	for _, entry := range casks {
-		seen[entry.Name] = true
+		seenCasks[entry.Name] = true
 		localVersion, exists := localCasksMap[entry.Name]
 		if !exists {
 			if entry.Deprecated || entry.Obsolete {
@@ -70,14 +71,14 @@ func ComputeDiff(m *manifest.Manifest, local *LocalState, machineTag string) *Di
 	}
 
 	// Step 4: Walk local entries — anything not in manifest is a removal candidate
-	// Invariant: each local entry not in `seen` is classified as ToRemove
+	// Invariant: each local entry not in seenFormulae/seenCasks is classified as ToRemove
 	for _, pkg := range local.Formulae {
-		if !seen[pkg.Name] {
+		if !seenFormulae[pkg.Name] {
 			result.ToRemove = append(result.ToRemove, manifest.PackageEntry{Name: pkg.Name})
 		}
 	}
 	for _, pkg := range local.Casks {
-		if !seen[pkg.Name] {
+		if !seenCasks[pkg.Name] {
 			result.ToRemove = append(result.ToRemove, manifest.PackageEntry{Name: pkg.Name})
 		}
 	}
