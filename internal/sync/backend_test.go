@@ -335,6 +335,7 @@ func TestGitBackend_CloneTimesOut(t *testing.T) {
 		t.Errorf("expected ~1s timeout, but took %s", elapsed)
 	}
 }
+
 func TestGitBackend_Name(t *testing.T) {
 	gb := NewGitBackend("https://example.com/repo.git", "main", "/tmp/work")
 	if got := gb.Name(); got != "git" {
