@@ -174,6 +174,75 @@ func TestGitBackend_PushPull(t *testing.T) {
 	}
 }
 
+func TestGitBackend_DoublePushNoError(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not found in PATH")
+	}
+
+	bareRepo := filepath.Join(t.TempDir(), "repo.git")
+	if out, err := exec.Command("git", "init", "--bare", bareRepo).CombinedOutput(); err != nil {
+		t.Fatalf("bare init: %s: %v", out, err)
+	}
+
+	// Seed the bare repo with an initial commit so the branch exists.
+	setupDir := filepath.Join(t.TempDir(), "setup")
+	if out, err := exec.Command("git", "clone", bareRepo, setupDir).CombinedOutput(); err != nil {
+		t.Fatalf("clone setup: %s: %v", out, err)
+	}
+	for _, args := range [][]string{
+		{"config", "user.email", "test@test.com"},
+		{"config", "user.name", "Test"},
+	} {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = setupDir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("config: %s: %v", out, err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(setupDir, "README.md"), []byte("init"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{{"add", "."}, {"commit", "-m", "init"}, {"push", "origin", "main"}} {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = setupDir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %s: %v", args, out, err)
+		}
+	}
+
+	// Pre-clone work dir and configure git user.
+	workDir := filepath.Join(t.TempDir(), "work")
+	if out, err := exec.Command("git", "clone", "--branch", "main", "--single-branch", bareRepo, workDir).CombinedOutput(); err != nil {
+		t.Fatalf("clone work: %s: %v", out, err)
+	}
+	for _, args := range [][]string{
+		{"config", "user.email", "test@test.com"},
+		{"config", "user.name", "Test"},
+	} {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = workDir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("config work: %s: %v", out, err)
+		}
+	}
+
+	srcFile := filepath.Join(t.TempDir(), "brew-sync.toml")
+	if err := os.WriteFile(srcFile, []byte("version = 1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	gb := NewGitBackend(bareRepo, "main", workDir)
+
+	if err := gb.Push(srcFile); err != nil {
+		t.Fatalf("first push: %v", err)
+	}
+
+	// Second push with identical content must succeed (issue #5).
+	if err := gb.Push(srcFile); err != nil {
+		t.Fatalf("second push should be a no-op but failed: %v", err)
+	}
+}
+
 func TestGitBackend_Name(t *testing.T) {
 	gb := NewGitBackend("https://example.com/repo.git", "main", "/tmp/work")
 	if got := gb.Name(); got != "git" {
