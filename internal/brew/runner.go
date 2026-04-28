@@ -27,6 +27,8 @@ type BrewRunner interface {
 	Uninstall(pkg diff.Package) error
 	// Upgrade upgrades a package to the latest (or specified) version.
 	Upgrade(pkg diff.Package) error
+	// Tap runs brew tap to add a third-party tap.
+	Tap(name string) error
 	// Update runs brew update to refresh Homebrew's package index.
 	Update() error
 	// IsInstalled returns true if the brew binary exists in PATH.
@@ -157,6 +159,15 @@ func (r *RealBrewRunner) Upgrade(pkg diff.Package) error {
 	cmd := exec.Command("brew", "upgrade", pkg.Name)
 	if output, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("failed to upgrade %s: %s: %w", pkg.Name, string(output), err)
+	}
+	return nil
+}
+
+// Tap runs `brew tap <name>` to add a third-party tap.
+func (r *RealBrewRunner) Tap(name string) error {
+	cmd := exec.Command("brew", "tap", name)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("failed to tap %s: %s: %w", name, string(output), err)
 	}
 	return nil
 }

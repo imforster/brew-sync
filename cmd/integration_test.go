@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -1008,5 +1009,95 @@ func TestIntegration_PushPreservesDeprecatedObsoleteFlags(t *testing.T) {
 	}
 	if !containsStr(formulaeNames, "cockroach") {
 		t.Error("cockroach (obsolete) should be preserved")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Integration Test: applyMissingTaps installs missing taps
+// Validates: Issue #14 — taps are applied before formulae/casks
+// ---------------------------------------------------------------------------
+
+func TestIntegration_ApplyMissingTaps(t *testing.T) {
+	mock := brew.NewMockBrewRunner()
+	mock.Taps = []string{"homebrew/core"}
+
+	err := applyMissingTaps(mock, []string{"homebrew/core", "hashicorp/tap", "homebrew/cask-fonts"})
+	if err != nil {
+		t.Fatalf("applyMissingTaps returned error: %v", err)
+	}
+
+	if mock.TapCalls != 2 {
+		t.Errorf("expected 2 tap calls, got %d", mock.TapCalls)
+	}
+
+	tapped := []string{}
+	for _, c := range mock.Calls {
+		if c.Operation == "tap" {
+			tapped = append(tapped, c.Package)
+		}
+	}
+	if !containsStr(tapped, "hashicorp/tap") {
+		t.Error("expected tap call for hashicorp/tap")
+	}
+	if !containsStr(tapped, "homebrew/cask-fonts") {
+		t.Error("expected tap call for homebrew/cask-fonts")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Integration Test: applyMissingTaps skips when all taps present
+// Validates: Issue #14 — no-op when local taps match manifest
+// ---------------------------------------------------------------------------
+
+func TestIntegration_ApplyMissingTapsAllPresent(t *testing.T) {
+	mock := brew.NewMockBrewRunner()
+	mock.Taps = []string{"homebrew/core", "hashicorp/tap"}
+
+	err := applyMissingTaps(mock, []string{"homebrew/core", "hashicorp/tap"})
+	if err != nil {
+		t.Fatalf("applyMissingTaps returned error: %v", err)
+	}
+
+	if mock.TapCalls != 0 {
+		t.Errorf("expected 0 tap calls when all present, got %d", mock.TapCalls)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Integration Test: applyMissingTaps continues on tap failure
+// Validates: Issue #14 — tap failure is non-fatal
+// ---------------------------------------------------------------------------
+
+func TestIntegration_ApplyMissingTapsContinuesOnError(t *testing.T) {
+	mock := brew.NewMockBrewRunner()
+	mock.Taps = []string{}
+	mock.TapErr = fmt.Errorf("network timeout")
+
+	err := applyMissingTaps(mock, []string{"bad/tap", "another/tap"})
+	if err != nil {
+		t.Fatalf("applyMissingTaps should not return error on tap failure, got: %v", err)
+	}
+
+	// Both taps should have been attempted despite errors.
+	if mock.TapCalls != 2 {
+		t.Errorf("expected 2 tap attempts, got %d", mock.TapCalls)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Integration Test: applyMissingTaps returns error on ListTaps failure
+// Validates: Issue #14 — ListTaps failure is fatal
+// ---------------------------------------------------------------------------
+
+func TestIntegration_ApplyMissingTapsListError(t *testing.T) {
+	mock := brew.NewMockBrewRunner()
+	mock.ListTapsErr = fmt.Errorf("brew not found")
+
+	err := applyMissingTaps(mock, []string{"homebrew/core"})
+	if err == nil {
+		t.Fatal("expected error when ListTaps fails, got nil")
+	}
+	if !strings.Contains(err.Error(), "failed to list taps") {
+		t.Errorf("expected 'failed to list taps' in error, got: %v", err)
 	}
 }

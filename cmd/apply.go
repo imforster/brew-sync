@@ -81,6 +81,13 @@ Use --dry-run to preview changes without applying them.`,
 			Casks:    casks,
 		}
 
+		// Apply missing taps before packages so tap-prefixed formulae can be installed.
+		if !dryRun {
+			if err := applyMissingTaps(runner, m.Taps); err != nil {
+				return err
+			}
+		}
+
 		// Compute diff with machine tag from config
 		result := diff.ComputeDiff(m, localState, getMachineTag(cfg))
 
@@ -170,6 +177,30 @@ Use --dry-run to preview changes without applying them.`,
 		// Return the apply error (if any) to trigger non-zero exit
 		return applyErr
 	},
+}
+
+// applyMissingTaps installs any manifest taps not already present locally.
+// Tap failures are printed but do not abort the apply.
+func applyMissingTaps(runner brew.BrewRunner, manifestTaps []string) error {
+	localTaps, err := runner.ListTaps()
+	if err != nil {
+		return fmt.Errorf("failed to list taps: %w", err)
+	}
+	localTapSet := make(map[string]bool, len(localTaps))
+	for _, t := range localTaps {
+		localTapSet[t] = true
+	}
+	for _, tap := range manifestTaps {
+		if !localTapSet[tap] {
+			fmt.Printf("  → tapping %s...\n", tap)
+			if err := runner.Tap(tap); err != nil {
+				fmt.Printf("  ✗ tap %s: %v\n", tap, err)
+			} else {
+				fmt.Printf("  ✓ tap %s\n", tap)
+			}
+		}
+	}
+	return nil
 }
 
 // markPackage finds a package by name in formulae or casks and applies the mutator.
