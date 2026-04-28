@@ -764,3 +764,249 @@ func containsStr(slice []string, val string) bool {
 	}
 	return false
 }
+
+// ---------------------------------------------------------------------------
+// Integration Test: Push preserves other machines' packages
+// Validates: Issue #8 — push merges into remote instead of overwriting
+// ---------------------------------------------------------------------------
+
+func TestIntegration_PushPreservesOtherMachinePackages(t *testing.T) {
+	manager := manifest.NewManifestManager()
+
+	// Machine A pushes a manifest with machine-specific entries.
+	machineAFormulae := []manifest.LocalPackage{
+		{Name: "git", Version: "2.40"},
+		{Name: "docker", Version: "24.0"},
+	}
+	machineACasks := []manifest.LocalPackage{{Name: "slack", Version: "4.0"}}
+	machineATaps := []string{"homebrew/core"}
+
+	mA := manager.BuildFromLocal(machineAFormulae, machineACasks, machineATaps, "machine-a", "alice")
+	// Add machine-specific filter to docker (only on machine-a).
+	for i := range mA.Formulae {
+		if mA.Formulae[i].Name == "docker" {
+			mA.Formulae[i].OnlyOn = []string{"machine-a"}
+		}
+	}
+
+	remoteDir := t.TempDir()
+	remotePath := filepath.Join(remoteDir, "brew-sync.toml")
+	backend := sync.NewFileBackend(remotePath)
+
+	localDir := t.TempDir()
+	localPath := filepath.Join(localDir, "brew-sync.toml")
+	if err := manager.Save(localPath, mA); err != nil {
+		t.Fatalf("Save machine-a manifest: %v", err)
+	}
+	if err := backend.Push(localPath); err != nil {
+		t.Fatalf("Push machine-a manifest: %v", err)
+	}
+
+	// Machine B pushes — simulate the push.go merge-before-overwrite logic.
+	machineBFormulae := []manifest.LocalPackage{
+		{Name: "git", Version: "2.45"},
+		{Name: "go", Version: "1.23"},
+	}
+	machineBCasks := []manifest.LocalPackage{{Name: "firefox", Version: "130.0"}}
+	machineBTaps := []string{"homebrew/core", "hashicorp/tap"}
+
+	outputPath := filepath.Join(t.TempDir(), "brew-sync.toml")
+
+	// Replicate push.go logic: pull → load → merge → fallback to BuildFromLocal.
+	var m *manifest.Manifest
+	tmpPath := outputPath + ".tmp"
+	if pullErr := backend.Pull(tmpPath); pullErr == nil {
+		existing, loadErr := manager.Load(tmpPath)
+		os.Remove(tmpPath)
+		if loadErr == nil {
+			manager.MergeLocal(existing, machineBFormulae, machineBCasks, machineBTaps, "machine-b", "bob")
+			m = existing
+		}
+	}
+	if m == nil {
+		t.Fatal("expected merge path, not BuildFromLocal fallback")
+	}
+
+	// Verify Machine A's entries survived.
+	formulaeNames := packageNames(m.Formulae)
+	if !containsStr(formulaeNames, "docker") {
+		t.Error("docker (machine-a only) should be preserved")
+	}
+	// Verify docker still has only_on.
+	for _, f := range m.Formulae {
+		if f.Name == "docker" {
+			if len(f.OnlyOn) != 1 || f.OnlyOn[0] != "machine-a" {
+				t.Errorf("docker only_on should be [machine-a], got %v", f.OnlyOn)
+			}
+		}
+	}
+
+	// Verify Machine B's entries were added.
+	if !containsStr(formulaeNames, "go") {
+		t.Error("go (machine-b local) should be added")
+	}
+	caskNames := packageNames(m.Casks)
+	if !containsStr(caskNames, "firefox") {
+		t.Error("firefox (machine-b local) should be added")
+	}
+	if !containsStr(caskNames, "slack") {
+		t.Error("slack (machine-a) should be preserved")
+	}
+
+	// Verify git version was updated to Machine B's newer version.
+	for _, f := range m.Formulae {
+		if f.Name == "git" && f.Version != "2.45" {
+			t.Errorf("git version should be 2.45 (machine-b), got %s", f.Version)
+		}
+	}
+
+	// Verify both machines are in metadata.
+	if !containsStr(m.Metadata.Machines, "machine-a") {
+		t.Error("machine-a should be in machines list")
+	}
+	if !containsStr(m.Metadata.Machines, "machine-b") {
+		t.Error("machine-b should be in machines list")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Integration Test: First push (no remote) falls back to BuildFromLocal
+// Validates: Issue #8 — fallback when no remote manifest exists
+// ---------------------------------------------------------------------------
+
+func TestIntegration_PushFirstPushFallsBackToBuildFromLocal(t *testing.T) {
+	manager := manifest.NewManifestManager()
+
+	// Backend points to a remote that doesn't exist yet.
+	remoteDir := t.TempDir()
+	remotePath := filepath.Join(remoteDir, "nonexistent", "brew-sync.toml")
+	backend := sync.NewFileBackend(remotePath)
+
+	localFormulae := []manifest.LocalPackage{
+		{Name: "git", Version: "2.40"},
+		{Name: "go", Version: "1.23"},
+	}
+	localCasks := []manifest.LocalPackage{{Name: "firefox", Version: "130.0"}}
+	localTaps := []string{"homebrew/core"}
+
+	outputPath := filepath.Join(t.TempDir(), "brew-sync.toml")
+
+	// Replicate push.go logic: pull fails → BuildFromLocal.
+	var m *manifest.Manifest
+	tmpPath := outputPath + ".tmp"
+	if pullErr := backend.Pull(tmpPath); pullErr == nil {
+		existing, loadErr := manager.Load(tmpPath)
+		os.Remove(tmpPath)
+		if loadErr == nil {
+			manager.MergeLocal(existing, localFormulae, localCasks, localTaps, "new-machine", "alice")
+			m = existing
+		}
+	}
+	if m == nil {
+		m = manager.BuildFromLocal(localFormulae, localCasks, localTaps, "new-machine", "alice")
+	}
+
+	if len(m.Formulae) != 2 {
+		t.Errorf("expected 2 formulae, got %d", len(m.Formulae))
+	}
+	if len(m.Casks) != 1 {
+		t.Errorf("expected 1 cask, got %d", len(m.Casks))
+	}
+	if m.Metadata.Machine != "new-machine" {
+		t.Errorf("expected machine=new-machine, got %s", m.Metadata.Machine)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Integration Test: Push preserves deprecated/obsolete flags from remote
+// Validates: Issue #8 — MergeLocal does not strip deprecated/obsolete flags
+// ---------------------------------------------------------------------------
+
+func TestIntegration_PushPreservesDeprecatedObsoleteFlags(t *testing.T) {
+	manager := manifest.NewManifestManager()
+
+	// Remote manifest has deprecated and obsolete entries.
+	remote := &manifest.Manifest{
+		Version: 1,
+		Metadata: manifest.ManifestMetadata{
+			Machine:  "machine-a",
+			Machines: []string{"machine-a"},
+		},
+		Formulae: []manifest.PackageEntry{
+			{Name: "git", Version: "2.40"},
+			{Name: "tldr", Deprecated: true},
+			{Name: "cockroach", Obsolete: true},
+		},
+		Casks: []manifest.PackageEntry{
+			{Name: "notepadnext", Obsolete: true},
+		},
+		Taps: []string{"homebrew/core"},
+	}
+
+	remoteDir := t.TempDir()
+	remotePath := filepath.Join(remoteDir, "brew-sync.toml")
+	backend := sync.NewFileBackend(remotePath)
+
+	tmpSave := filepath.Join(t.TempDir(), "brew-sync.toml")
+	if err := manager.Save(tmpSave, remote); err != nil {
+		t.Fatalf("Save remote manifest: %v", err)
+	}
+	if err := backend.Push(tmpSave); err != nil {
+		t.Fatalf("Push remote manifest: %v", err)
+	}
+
+	// Machine B pushes with only git and go locally.
+	localFormulae := []manifest.LocalPackage{
+		{Name: "git", Version: "2.45"},
+		{Name: "go", Version: "1.23"},
+	}
+	localCasks := []manifest.LocalPackage{}
+	localTaps := []string{"homebrew/core"}
+
+	outputPath := filepath.Join(t.TempDir(), "brew-sync.toml")
+
+	var m *manifest.Manifest
+	tmpPath := outputPath + ".tmp"
+	if pullErr := backend.Pull(tmpPath); pullErr == nil {
+		existing, loadErr := manager.Load(tmpPath)
+		os.Remove(tmpPath)
+		if loadErr == nil {
+			manager.MergeLocal(existing, localFormulae, localCasks, localTaps, "machine-b", "bob")
+			m = existing
+		}
+	}
+	if m == nil {
+		t.Fatal("expected merge path, not BuildFromLocal fallback")
+	}
+
+	// Verify deprecated/obsolete flags survived.
+	for _, f := range m.Formulae {
+		switch f.Name {
+		case "tldr":
+			if !f.Deprecated {
+				t.Error("tldr should still be deprecated")
+			}
+		case "cockroach":
+			if !f.Obsolete {
+				t.Error("cockroach should still be obsolete")
+			}
+		}
+	}
+	for _, c := range m.Casks {
+		if c.Name == "notepadnext" && !c.Obsolete {
+			t.Error("notepadnext cask should still be obsolete")
+		}
+	}
+
+	// Verify new package was added alongside preserved entries.
+	formulaeNames := packageNames(m.Formulae)
+	if !containsStr(formulaeNames, "go") {
+		t.Error("go should be added by merge")
+	}
+	if !containsStr(formulaeNames, "tldr") {
+		t.Error("tldr (deprecated) should be preserved")
+	}
+	if !containsStr(formulaeNames, "cockroach") {
+		t.Error("cockroach (obsolete) should be preserved")
+	}
+}

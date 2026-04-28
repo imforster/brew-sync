@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"os"
 
 	"brew-sync/internal/brew"
 	"brew-sync/internal/manifest"
@@ -63,19 +64,47 @@ If no configuration file is found, the manifest is saved locally only.`,
 			}
 		}
 
-		// Step 3: Build manifest from local state
-		if verbose {
-			fmt.Println("[verbose] Building manifest from local state...")
-		}
-
 		cfg, cfgErr := loadConfig(GetConfigPath())
 		machineTag := getMachineTag(cfg)
 		updatedBy := getUpdatedBy()
-		m := manager.BuildFromLocal(localFormulae, localCasks, taps, machineTag, updatedBy)
-
-		// Step 4: Save manifest locally using configured path
 		outputPath := getManifestPath(cfg)
 
+		// Step 3: Create sync backend early so we can pull before building the manifest.
+		var backend sync.SyncBackend
+		if cfgErr == nil {
+			b, err := sync.NewSyncBackend(cfg)
+			if err != nil {
+				return fmt.Errorf("failed to create sync backend: %w", err)
+			}
+			backend = b
+		}
+
+		// Step 4: Build manifest — merge local state into the existing remote manifest
+		// to preserve entries from other machines. Fall back to a fresh build if no
+		// remote manifest exists yet (first push).
+		var m *manifest.Manifest
+		if backend != nil {
+			tmpPath := outputPath + ".tmp"
+			if pullErr := backend.Pull(tmpPath); pullErr == nil {
+				existing, loadErr := manager.Load(tmpPath)
+				os.Remove(tmpPath)
+				if loadErr == nil {
+					manager.MergeLocal(existing, localFormulae, localCasks, taps, machineTag, updatedBy)
+					m = existing
+					if verbose {
+						fmt.Println("[verbose] Merged local state into existing remote manifest")
+					}
+				}
+			}
+		}
+		if m == nil {
+			if verbose {
+				fmt.Println("[verbose] Building new manifest from local state")
+			}
+			m = manager.BuildFromLocal(localFormulae, localCasks, taps, machineTag, updatedBy)
+		}
+
+		// Step 5: Save manifest locally using configured path
 		if verbose {
 			fmt.Printf("[verbose] Saving manifest to %s\n", outputPath)
 		}
@@ -87,16 +116,11 @@ If no configuration file is found, the manifest is saved locally only.`,
 		fmt.Printf("Manifest saved to %s (%d formulae, %d casks, %d taps)\n",
 			outputPath, len(m.Formulae), len(m.Casks), len(m.Taps))
 
-		// Step 5: Try to push via sync backend (only if config loaded successfully)
-		if cfgErr != nil {
+		// Step 6: Push via sync backend (only if config loaded successfully)
+		if backend == nil {
 			fmt.Println("No sync backend configured — manifest saved locally only.")
 			fmt.Println("To push remotely, configure a sync backend in your config file.")
 			return nil
-		}
-
-		backend, err := sync.NewSyncBackend(cfg)
-		if err != nil {
-			return fmt.Errorf("failed to create sync backend: %w", err)
 		}
 
 		if verbose {
