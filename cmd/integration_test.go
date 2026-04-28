@@ -608,14 +608,17 @@ func TestIntegration_MergeLocal(t *testing.T) {
 	}
 	localTaps := []string{"homebrew/core", "hashicorp/tap"}
 
-	added, updated := manager.MergeLocal(m, localFormulae, localCasks, localTaps, "test-machine", "testuser")
+	added, updated, addedTaps := manager.MergeLocal(m, localFormulae, localCasks, localTaps, "test-machine", "testuser")
 
 	// Verify counts
-	if added != 3 { // go + slack + hashicorp/tap
-		t.Errorf("MergeLocal: expected 3 added, got %d", added)
+	if added != 2 { // go + slack
+		t.Errorf("MergeLocal: expected 2 added, got %d", added)
 	}
 	if updated != 1 { // git 2.40 → 2.45
 		t.Errorf("MergeLocal: expected 1 updated, got %d", updated)
+	}
+	if addedTaps != 1 { // hashicorp/tap
+		t.Errorf("MergeLocal: expected 1 addedTaps, got %d", addedTaps)
 	}
 
 	// Verify manifest contents

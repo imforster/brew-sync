@@ -62,14 +62,14 @@ for every local-only package, plus updating all version drift.`,
 
 		machineTag := getMachineTag(cfg)
 		updatedBy := getUpdatedBy()
-		added, updated := manager.MergeLocal(m, localFormulae, localCasks, taps, machineTag, updatedBy)
+		addedPkgs, updated, addedTaps := manager.MergeLocal(m, localFormulae, localCasks, taps, machineTag, updatedBy)
 
 		if err := manager.Save(manifestPath, m); err != nil {
 			return fmt.Errorf("failed to save manifest: %w", err)
 		}
 
-		fmt.Printf("Manifest merged: %d added, %d versions updated (%d formulae, %d casks, %d taps)\n",
-			added, updated, len(m.Formulae), len(m.Casks), len(m.Taps))
+		fmt.Printf("Manifest merged: %d packages added, %d taps added, %d versions updated (%d formulae, %d casks, %d taps)\n",
+			addedPkgs, addedTaps, updated, len(m.Formulae), len(m.Casks), len(m.Taps))
 
 		return nil
 	},
