@@ -1,11 +1,15 @@
 package sync
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"time"
 )
+
+const gitTimeout = 60 * time.Second
 
 // SyncBackend abstracts pushing and pulling the manifest to/from a remote location.
 type SyncBackend interface {
@@ -21,7 +25,15 @@ type SyncBackend interface {
 type GitBackend struct {
 	RepoURL string
 	Branch  string
-	WorkDir string // temporary working directory for git operations
+	WorkDir string        // temporary working directory for git operations
+	Timeout time.Duration // per-operation timeout; defaults to gitTimeout if zero
+}
+
+func (g *GitBackend) timeout() time.Duration {
+	if g.Timeout > 0 {
+		return g.Timeout
+	}
+	return gitTimeout
 }
 
 // NewGitBackend creates a new GitBackend with the given repository URL, branch, and working directory.
@@ -45,7 +57,13 @@ func (g *GitBackend) Name() string {
 func (g *GitBackend) Pull(dest string) error {
 	if isGitRepo(g.WorkDir) {
 		if err := g.pull(); err != nil {
-			return fmt.Errorf("git pull failed: %w", err)
+			// Repo may be corrupted; remove and re-clone.
+			if removeErr := os.RemoveAll(g.WorkDir); removeErr != nil {
+				return fmt.Errorf("git pull failed: %w (cleanup also failed: %v)", err, removeErr)
+			}
+			if cloneErr := g.clone(); cloneErr != nil {
+				return fmt.Errorf("git pull failed and re-clone also failed: %w", cloneErr)
+			}
 		}
 	} else {
 		if err := g.clone(); err != nil {
@@ -116,7 +134,10 @@ func (g *GitBackend) clone() error {
 		return fmt.Errorf("failed to create parent directory for git working directory: %w", err)
 	}
 
-	cmd := exec.Command("git", "clone", "--branch", g.Branch, "--single-branch", g.RepoURL, g.WorkDir)
+	ctx, cancel := context.WithTimeout(context.Background(), g.timeout())
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "git", "clone", "--branch", g.Branch, "--single-branch", g.RepoURL, g.WorkDir)
+	cmd.WaitDelay = 3 * time.Second
 	if output, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("failed to clone %s (branch %s): %s: %w", g.RepoURL, g.Branch, string(output), err)
 	}
@@ -125,8 +146,11 @@ func (g *GitBackend) clone() error {
 
 // pull runs git pull in the working directory.
 func (g *GitBackend) pull() error {
-	cmd := exec.Command("git", "pull", "origin", g.Branch)
+	ctx, cancel := context.WithTimeout(context.Background(), g.timeout())
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "git", "pull", "origin", g.Branch)
 	cmd.Dir = g.WorkDir
+	cmd.WaitDelay = 3 * time.Second
 	if output, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("failed to pull from %s (branch %s): %s: %w", g.RepoURL, g.Branch, string(output), err)
 	}
@@ -135,8 +159,11 @@ func (g *GitBackend) pull() error {
 
 // gitCommand runs a git command in the working directory.
 func (g *GitBackend) gitCommand(args ...string) error {
-	cmd := exec.Command("git", args...)
+	ctx, cancel := context.WithTimeout(context.Background(), g.timeout())
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Dir = g.WorkDir
+	cmd.WaitDelay = 3 * time.Second
 	if output, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("%s: %w", string(output), err)
 	}
