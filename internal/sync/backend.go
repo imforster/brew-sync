@@ -101,6 +101,11 @@ func (g *GitBackend) Push(src string) error {
 		return fmt.Errorf("git add failed: %w", err)
 	}
 
+	// Skip commit and push when the manifest is unchanged since the last push.
+	if !g.hasStagedChanges() {
+		return nil
+	}
+
 	// Commit the changes.
 	if err := g.gitCommand("commit", "-m", "Update brew-sync manifest"); err != nil {
 		return fmt.Errorf("git commit failed: %w", err)
@@ -112,6 +117,14 @@ func (g *GitBackend) Push(src string) error {
 	}
 
 	return nil
+}
+
+// hasStagedChanges returns true if there are staged changes ready to be committed.
+// It relies on `git diff --cached --quiet` exiting 1 when differences exist, 0 when there are none.
+func (g *GitBackend) hasStagedChanges() bool {
+	cmd := exec.Command("git", "diff", "--cached", "--quiet")
+	cmd.Dir = g.WorkDir
+	return cmd.Run() != nil
 }
 
 // clone clones the repository into the working directory.
