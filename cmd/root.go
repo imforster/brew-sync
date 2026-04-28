@@ -12,6 +12,12 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// Version info set via ldflags at build time.
+var (
+	Version = "dev"
+	Commit  = "unknown"
+)
+
 var (
 	// Global flag values accessible by subcommands.
 	cfgFile string
@@ -107,8 +113,9 @@ func getUpdatedBy() string {
 }
 
 var rootCmd = &cobra.Command{
-	Use:   "brew-sync",
-	Short: "Synchronize Homebrew packages across machines",
+	Use:     "brew-sync",
+	Short:   "Synchronize Homebrew packages across machines",
+	Version: Version + " (" + Commit + ")",
 	Long: `brew-sync is a CLI tool that wraps Homebrew to synchronize installed
 packages (formulae and casks) across multiple machines.
 
