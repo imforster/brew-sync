@@ -41,80 +41,93 @@ func genDiffVersion() *rapid.Generator[string] {
 	})
 }
 
-// diffTestData holds generated manifest and local state with names that are
-// unique across all four lists (manifest formulae, manifest casks, local
-// formulae, local casks). This matches the engine's assumption that package
-// names are unique across formulae and casks.
+// diffTestData holds generated manifest and local state. Names are unique
+// within each type (formulae, casks) but may overlap across types — a formula
+// and cask can share the same name, which is the scenario the separate
+// seen-maps fix addresses.
 type diffTestData struct {
 	Manifest *manifest.Manifest
 	Local    *LocalState
 }
 
-// genDiffTestData generates a manifest and local state where all package names
-// are unique across manifest formulae, manifest casks, local formulae, and
-// local casks. This avoids name collisions between types, which the engine's
-// single `seen` map assumes.
+// genDiffTestData generates a manifest and local state where names are unique
+// within each type but may appear as both a formula and a cask. This exercises
+// the separate seenFormulae/seenCasks maps in ComputeDiff.
 func genDiffTestData() *rapid.Generator[diffTestData] {
 	return rapid.Custom(func(t *rapid.T) diffTestData {
-		// Generate a pool of unique names, then partition them across the four lists.
 		totalNames := rapid.IntRange(0, 20).Draw(t, "totalNames")
-		seen := make(map[string]bool)
+		usedNames := make(map[string]bool)
 		allNames := make([]string, 0, totalNames)
 		for len(allNames) < totalNames {
 			name := genDiffPkgName().Draw(t, "name")
-			if !seen[name] {
-				seen[name] = true
+			if !usedNames[name] {
+				usedNames[name] = true
 				allNames = append(allNames, name)
 			}
 		}
 
-		// Assign each name to one or more of the four buckets:
-		// 0 = manifest formulae, 1 = manifest casks,
-		// 2 = local formulae, 3 = local casks.
-		// Each name goes to exactly one formula bucket and/or one cask bucket
-		// to keep names unique within each namespace.
-		// But since the engine uses a single seen map, we keep names globally unique.
+		seenFormulae := make(map[string]bool)
+		seenCasks := make(map[string]bool)
 		var manifestFormulae []manifest.PackageEntry
 		var manifestCasks []manifest.PackageEntry
 		var localFormulae []Package
 		var localCasks []Package
 
 		for _, name := range allNames {
-			// Each name can appear in manifest (as formula or cask) and/or
-			// local (as formula or cask). We assign to exactly one type on
-			// each side to keep things clean.
-			inManifest := rapid.Bool().Draw(t, "inManifest")
-			inLocal := rapid.Bool().Draw(t, "inLocal")
-
-			// Ensure at least one side has the name
-			if !inManifest && !inLocal {
-				if rapid.Bool().Draw(t, "defaultSide") {
-					inManifest = true
+			// Each name can independently appear as a formula and/or cask.
+			asFormula := rapid.Bool().Draw(t, "asFormula")
+			asCask := rapid.Bool().Draw(t, "asCask")
+			if !asFormula && !asCask {
+				if rapid.Bool().Draw(t, "defaultType") {
+					asFormula = true
 				} else {
-					inLocal = true
+					asCask = true
 				}
 			}
 
-			// Decide type: formula or cask (same type on both sides for simplicity)
-			isFormula := rapid.Bool().Draw(t, "isFormula")
-
-			if inManifest {
-				version := genDiffVersion().Draw(t, "manifestVersion")
-				entry := manifest.PackageEntry{Name: name, Version: version}
-				if isFormula {
-					manifestFormulae = append(manifestFormulae, entry)
-				} else {
-					manifestCasks = append(manifestCasks, entry)
+			if asFormula && !seenFormulae[name] {
+				seenFormulae[name] = true
+				inManifest := rapid.Bool().Draw(t, "formulaInManifest")
+				inLocal := rapid.Bool().Draw(t, "formulaInLocal")
+				if !inManifest && !inLocal {
+					if rapid.Bool().Draw(t, "formulaDefault") {
+						inManifest = true
+					} else {
+						inLocal = true
+					}
+				}
+				if inManifest {
+					manifestFormulae = append(manifestFormulae, manifest.PackageEntry{
+						Name: name, Version: genDiffVersion().Draw(t, "fmVer"),
+					})
+				}
+				if inLocal {
+					localFormulae = append(localFormulae, Package{
+						Name: name, Version: genDiffVersion().Draw(t, "flVer"),
+					})
 				}
 			}
 
-			if inLocal {
-				version := genDiffVersion().Draw(t, "localVersion")
-				pkg := Package{Name: name, Version: version}
-				if isFormula {
-					localFormulae = append(localFormulae, pkg)
-				} else {
-					localCasks = append(localCasks, pkg)
+			if asCask && !seenCasks[name] {
+				seenCasks[name] = true
+				inManifest := rapid.Bool().Draw(t, "caskInManifest")
+				inLocal := rapid.Bool().Draw(t, "caskInLocal")
+				if !inManifest && !inLocal {
+					if rapid.Bool().Draw(t, "caskDefault") {
+						inManifest = true
+					} else {
+						inLocal = true
+					}
+				}
+				if inManifest {
+					manifestCasks = append(manifestCasks, manifest.PackageEntry{
+						Name: name, Version: genDiffVersion().Draw(t, "cmVer"),
+					})
+				}
+				if inLocal {
+					localCasks = append(localCasks, Package{
+						Name: name, Version: genDiffVersion().Draw(t, "clVer"),
+					})
 				}
 			}
 		}
@@ -141,16 +154,13 @@ func genDiffTestData() *rapid.Generator[diffTestData] {
 
 // ---------------------------------------------------------------------------
 // Property 1: Diff completeness
-// Every package in manifest ∪ local appears in exactly one of
-// {ToInstall, ToRemove, ToUpgrade, Unchanged}.
+// Every package slot (name × type) in manifest ∪ local appears in exactly
+// one of {ToInstall, ToRemove, ToUpgrade, Unchanged, Skipped}.
+// A name can appear twice if it exists as both a formula and a cask.
 //
 // **Validates: Requirements 2.2, 2.3, 2.4, 2.5, 2.6**
 // ---------------------------------------------------------------------------
 
-// TestPropertyDiffCompleteness generates random manifests and local states,
-// computes the diff, and verifies that every package in the union of
-// (manifest entries + local packages) appears in exactly one of the four
-// result sets. No package should be missing or appear in multiple sets.
 func TestPropertyDiffCompleteness(t *testing.T) {
 	rapid.Check(t, func(rt *rapid.T) {
 		data := genDiffTestData().Draw(rt, "testData")
@@ -158,67 +168,69 @@ func TestPropertyDiffCompleteness(t *testing.T) {
 
 		result := ComputeDiff(data.Manifest, data.Local, machineTag)
 
-		// Build the universe: all package names from manifest ∪ local.
-		// Since we generate without machine filters, all manifest entries
-		// pass through FilterForMachine.
-		universe := make(map[string]bool)
+		// Count expected occurrences per name: one per type it appears in.
+		expected := make(map[string]int)
+		formulaNames := make(map[string]bool)
+		caskNames := make(map[string]bool)
 		for _, e := range data.Manifest.Formulae {
-			universe[e.Name] = true
-		}
-		for _, e := range data.Manifest.Casks {
-			universe[e.Name] = true
+			formulaNames[e.Name] = true
 		}
 		for _, p := range data.Local.Formulae {
-			universe[p.Name] = true
+			formulaNames[p.Name] = true
+		}
+		for _, e := range data.Manifest.Casks {
+			caskNames[e.Name] = true
 		}
 		for _, p := range data.Local.Casks {
-			universe[p.Name] = true
+			caskNames[p.Name] = true
+		}
+		for name := range formulaNames {
+			expected[name]++
+		}
+		for name := range caskNames {
+			expected[name]++
 		}
 
-		// Count how many times each name appears across the four result sets.
-		counts := make(map[string]int)
+		// Count actual occurrences across all result sets.
+		actual := make(map[string]int)
 		for _, e := range result.ToInstall {
-			counts[e.Name]++
+			actual[e.Name]++
 		}
 		for _, e := range result.ToRemove {
-			counts[e.Name]++
+			actual[e.Name]++
 		}
 		for _, e := range result.ToUpgrade {
-			counts[e.Name]++
+			actual[e.Name]++
 		}
 		for _, e := range result.Unchanged {
-			counts[e.Name]++
+			actual[e.Name]++
+		}
+		for _, e := range result.Skipped {
+			actual[e.Name]++
 		}
 
-		// Every package in the universe must appear exactly once.
-		for name := range universe {
-			c := counts[name]
-			if c != 1 {
-				rt.Fatalf("package %q appears %d times in diff result sets (expected exactly 1)", name, c)
+		for name, want := range expected {
+			if actual[name] != want {
+				rt.Fatalf("package %q: got %d occurrences in result, want %d", name, actual[name], want)
 			}
 		}
-
-		// No package outside the universe should appear in any result set.
-		for name, c := range counts {
-			if !universe[name] {
-				rt.Fatalf("package %q appears %d times in diff result but is not in manifest ∪ local", name, c)
+		for name, got := range actual {
+			if expected[name] == 0 {
+				rt.Fatalf("package %q appears %d times in result but not in manifest ∪ local", name, got)
 			}
 		}
 	})
 }
 
 // ---------------------------------------------------------------------------
-// Property 2: Diff soundness
-// ToInstall contains only manifest-only packages;
-// ToRemove contains only local-only packages.
+// Property 2: Diff soundness (per-type)
+// ToInstall entries come from manifest-only slots; ToRemove from local-only.
+// Checked per type since a name can be a formula in manifest and a cask in
+// local (or vice versa).
 //
 // **Validates: Requirements 2.2, 2.3, 2.4, 2.5, 2.6**
 // ---------------------------------------------------------------------------
 
-// TestPropertyDiffSoundness generates random manifests and local states,
-// computes the diff, and verifies:
-//   - Every package in ToInstall is in the manifest but NOT in local
-//   - Every package in ToRemove is in local but NOT in the (filtered) manifest
 func TestPropertyDiffSoundness(t *testing.T) {
 	rapid.Check(t, func(rt *rapid.T) {
 		data := genDiffTestData().Draw(rt, "testData")
@@ -226,41 +238,41 @@ func TestPropertyDiffSoundness(t *testing.T) {
 
 		result := ComputeDiff(data.Manifest, data.Local, machineTag)
 
-		// Build manifest name set (no filters, so all entries are included).
-		manifestNames := make(map[string]bool)
+		// Build per-type name sets.
+		manifestFormulae := make(map[string]bool)
+		manifestCasks := make(map[string]bool)
+		localFormulae := make(map[string]bool)
+		localCasks := make(map[string]bool)
 		for _, e := range data.Manifest.Formulae {
-			manifestNames[e.Name] = true
+			manifestFormulae[e.Name] = true
 		}
 		for _, e := range data.Manifest.Casks {
-			manifestNames[e.Name] = true
+			manifestCasks[e.Name] = true
 		}
-
-		// Build local name set.
-		localNames := make(map[string]bool)
 		for _, p := range data.Local.Formulae {
-			localNames[p.Name] = true
+			localFormulae[p.Name] = true
 		}
 		for _, p := range data.Local.Casks {
-			localNames[p.Name] = true
+			localCasks[p.Name] = true
 		}
 
-		// ToInstall: every package must be in manifest but NOT in local.
+		inManifest := func(name string) bool { return manifestFormulae[name] || manifestCasks[name] }
+		inLocal := func(name string) bool { return localFormulae[name] || localCasks[name] }
+
+		// ToInstall: each entry must be in manifest and NOT have a matching
+		// local type. A name can be ToInstall as a cask even if a formula
+		// with the same name is local — they're independent types.
 		for _, e := range result.ToInstall {
-			if !manifestNames[e.Name] {
+			if !inManifest(e.Name) {
 				rt.Fatalf("ToInstall contains %q which is NOT in the manifest", e.Name)
 			}
-			if localNames[e.Name] {
-				rt.Fatalf("ToInstall contains %q which IS in local (should not be ToInstall)", e.Name)
-			}
 		}
 
-		// ToRemove: every package must be in local but NOT in manifest.
+		// ToRemove: each entry must be in local and NOT have a matching
+		// manifest type.
 		for _, e := range result.ToRemove {
-			if !localNames[e.Name] {
+			if !inLocal(e.Name) {
 				rt.Fatalf("ToRemove contains %q which is NOT in local", e.Name)
-			}
-			if manifestNames[e.Name] {
-				rt.Fatalf("ToRemove contains %q which IS in the manifest (should not be ToRemove)", e.Name)
 			}
 		}
 	})

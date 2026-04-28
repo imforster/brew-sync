@@ -169,7 +169,8 @@ Use --dry-run to preview changes without applying them.`,
 				}
 				if dirty {
 					if err := manager.Save(manifestPath, m); err != nil {
-						fmt.Printf("  ⚠ failed to save manifest: %v\n", err)
+						fmt.Fprintf(os.Stderr, "warning: failed to save updated versions to manifest: %v\n", err)
+						fmt.Fprintln(os.Stderr, "         Next run may re-attempt the same upgrades.")
 					} else {
 						fmt.Println("  ✓ manifest updated")
 					}

@@ -124,8 +124,8 @@ func (mm *ManifestManager) BuildFromLocal(formulae []LocalPackage, casks []Local
 // MergeLocal unions local packages into an existing manifest.
 // It adds packages not already present and updates versions of existing packages
 // to match local state. Packages in the manifest but not installed locally are preserved.
-// Returns counts of added and version-updated packages.
-func (mm *ManifestManager) MergeLocal(m *Manifest, localFormulae, localCasks []LocalPackage, taps []string, machineTag, updatedBy string) (added, updated int) {
+// Returns counts of added packages, version-updated packages, and added taps separately.
+func (mm *ManifestManager) MergeLocal(m *Manifest, localFormulae, localCasks []LocalPackage, taps []string, machineTag, updatedBy string) (addedPkgs, updated, addedTaps int) {
 	// Index existing manifest entries
 	formulaeIdx := make(map[string]int, len(m.Formulae))
 	for i, e := range m.Formulae {
@@ -145,7 +145,7 @@ func (mm *ManifestManager) MergeLocal(m *Manifest, localFormulae, localCasks []L
 			}
 		} else {
 			m.Formulae = append(m.Formulae, PackageEntry{Name: pkg.Name, Version: pkg.Version})
-			added++
+			addedPkgs++
 		}
 	}
 
@@ -158,7 +158,7 @@ func (mm *ManifestManager) MergeLocal(m *Manifest, localFormulae, localCasks []L
 			}
 		} else {
 			m.Casks = append(m.Casks, PackageEntry{Name: pkg.Name, Version: pkg.Version})
-			added++
+			addedPkgs++
 		}
 	}
 
@@ -170,7 +170,7 @@ func (mm *ManifestManager) MergeLocal(m *Manifest, localFormulae, localCasks []L
 	for _, t := range taps {
 		if !tapSet[t] {
 			m.Taps = append(m.Taps, t)
-			added++
+			addedTaps++
 		}
 	}
 
@@ -185,7 +185,7 @@ func (mm *ManifestManager) MergeLocal(m *Manifest, localFormulae, localCasks []L
 	m.Metadata.Machine = machineTag
 	m.Metadata.Machines = AddMachineToList(m.Metadata.Machines, machineTag)
 
-	return added, updated
+	return addedPkgs, updated, addedTaps
 }
 
 // Validate checks a manifest for structural correctness.
@@ -248,9 +248,6 @@ func (mm *ManifestManager) Validate(m *Manifest) error {
 // isValidTapFormat checks that a tap string matches the owner/repo format:
 // exactly one "/" with non-empty parts on both sides.
 func isValidTapFormat(tap string) bool {
-	parts := strings.SplitN(tap, "/", 3)
-	if len(parts) != 2 {
-		return false
-	}
-	return parts[0] != "" && parts[1] != ""
+	parts := strings.SplitN(tap, "/", 2)
+	return len(parts) == 2 && parts[0] != "" && parts[1] != "" && !strings.Contains(parts[1], "/")
 }

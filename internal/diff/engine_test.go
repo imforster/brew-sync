@@ -253,6 +253,124 @@ func TestComputeDiff_NoVersionInManifest(t *testing.T) {
 	}
 }
 
+// ---------------------------------------------------------------------------
+// Same-name formula/cask tests (validates the separate seen-maps fix)
+// ---------------------------------------------------------------------------
+
+// TestComputeDiff_SameNameFormulaCask_BothUnchanged verifies that a formula
+// and cask with the same name are independently tracked as Unchanged when
+// both exist in manifest and local.
+func TestComputeDiff_SameNameFormulaCask_BothUnchanged(t *testing.T) {
+	m := &manifest.Manifest{
+		Version:  1,
+		Formulae: []manifest.PackageEntry{{Name: "docker"}},
+		Casks:    []manifest.PackageEntry{{Name: "docker"}},
+	}
+	local := &LocalState{
+		Formulae: []Package{{Name: "docker", Version: "24.0"}},
+		Casks:    []Package{{Name: "docker", Version: "4.25"}},
+	}
+
+	result := ComputeDiff(m, local, "my-machine")
+
+	if len(result.Unchanged) != 2 {
+		t.Errorf("Unchanged: got %d, want 2", len(result.Unchanged))
+	}
+	if len(result.ToRemove) != 0 {
+		t.Errorf("ToRemove: got %v, want empty", entryNames(result.ToRemove))
+	}
+	if len(result.ToInstall) != 0 {
+		t.Errorf("ToInstall: got %v, want empty", entryNames(result.ToInstall))
+	}
+}
+
+// TestComputeDiff_SameNameFormulaCask_CaskLocalOnly verifies that a local-only
+// cask is classified as ToRemove even when a formula with the same name exists
+// in the manifest. This is the exact bug the separate seen-maps fix addresses:
+// with a shared map, the cask would be shadowed by the formula and never
+// appear in ToRemove.
+func TestComputeDiff_SameNameFormulaCask_CaskLocalOnly(t *testing.T) {
+	m := &manifest.Manifest{
+		Version:  1,
+		Formulae: []manifest.PackageEntry{{Name: "docker"}},
+		// no cask named "docker" in manifest
+	}
+	local := &LocalState{
+		Formulae: []Package{{Name: "docker", Version: "24.0"}},
+		Casks:    []Package{{Name: "docker", Version: "4.25"}},
+	}
+
+	result := ComputeDiff(m, local, "my-machine")
+
+	if len(result.Unchanged) != 1 {
+		t.Errorf("Unchanged: got %d, want 1 (formula)", len(result.Unchanged))
+	}
+	if len(result.ToRemove) != 1 {
+		t.Fatalf("ToRemove: got %d, want 1 (cask)", len(result.ToRemove))
+	}
+	if result.ToRemove[0].Name != "docker" {
+		t.Errorf("ToRemove[0].Name: got %q, want %q", result.ToRemove[0].Name, "docker")
+	}
+}
+
+// TestComputeDiff_SameNameFormulaCask_FormulaLocalOnly verifies the symmetric
+// case: a local-only formula is classified as ToRemove even when a cask with
+// the same name exists in the manifest.
+func TestComputeDiff_SameNameFormulaCask_FormulaLocalOnly(t *testing.T) {
+	m := &manifest.Manifest{
+		Version: 1,
+		// no formula named "docker" in manifest
+		Casks: []manifest.PackageEntry{{Name: "docker"}},
+	}
+	local := &LocalState{
+		Formulae: []Package{{Name: "docker", Version: "24.0"}},
+		Casks:    []Package{{Name: "docker", Version: "4.25"}},
+	}
+
+	result := ComputeDiff(m, local, "my-machine")
+
+	if len(result.Unchanged) != 1 {
+		t.Errorf("Unchanged: got %d, want 1 (cask)", len(result.Unchanged))
+	}
+	if len(result.ToRemove) != 1 {
+		t.Fatalf("ToRemove: got %d, want 1 (formula)", len(result.ToRemove))
+	}
+	if result.ToRemove[0].Name != "docker" {
+		t.Errorf("ToRemove[0].Name: got %q, want %q", result.ToRemove[0].Name, "docker")
+	}
+}
+
+// TestComputeDiff_SameNameFormulaCask_BothManifestOnlyOneLocal verifies that
+// when both a formula and cask with the same name are in the manifest but only
+// one type is installed locally, the missing type is ToInstall and the present
+// type is Unchanged.
+func TestComputeDiff_SameNameFormulaCask_BothManifestOnlyOneLocal(t *testing.T) {
+	m := &manifest.Manifest{
+		Version:  1,
+		Formulae: []manifest.PackageEntry{{Name: "docker"}},
+		Casks:    []manifest.PackageEntry{{Name: "docker"}},
+	}
+	local := &LocalState{
+		Formulae: []Package{{Name: "docker", Version: "24.0"}},
+		// no cask named "docker" locally
+	}
+
+	result := ComputeDiff(m, local, "my-machine")
+
+	if len(result.Unchanged) != 1 {
+		t.Errorf("Unchanged: got %d, want 1", len(result.Unchanged))
+	}
+	if len(result.ToInstall) != 1 {
+		t.Fatalf("ToInstall: got %d, want 1", len(result.ToInstall))
+	}
+	if result.ToInstall[0].Name != "docker" {
+		t.Errorf("ToInstall[0].Name: got %q, want %q", result.ToInstall[0].Name, "docker")
+	}
+	if len(result.ToRemove) != 0 {
+		t.Errorf("ToRemove: got %v, want empty", entryNames(result.ToRemove))
+	}
+}
+
 // TestComputeDiff_MachineFilterOnlyOn verifies that a package with only_on
 // that doesn't match the current machineTag is excluded from ToInstall.
 // Validates: Requirements 2.7, 3.1
