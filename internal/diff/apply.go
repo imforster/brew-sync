@@ -127,6 +127,18 @@ func ApplyDiff(diff *DiffResult, runner Runner, dryRun bool, opts ...ApplyOption
 		}
 	}
 
+	// Populate count fields to mirror the dry-run counts for any caller that inspects them.
+	for _, r := range report.Results {
+		switch r.Operation {
+		case "install":
+			report.InstallCount++
+		case "upgrade":
+			report.UpgradeCount++
+		case "remove":
+			report.RemoveCount++
+		}
+	}
+
 	if report.HasErrors() {
 		return report, fmt.Errorf("apply completed with %d errors", report.ErrorCount)
 	}
