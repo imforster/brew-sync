@@ -20,6 +20,9 @@ coverage.html
 *.swp
 *.swo
 
+# Kiro local settings (workspace preferences, not project config)
+.kiro/settings/
+
 # OS
 .DS_Store
 Thumbs.db
